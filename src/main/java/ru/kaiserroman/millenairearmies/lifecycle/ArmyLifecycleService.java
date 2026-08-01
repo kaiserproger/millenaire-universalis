@@ -77,6 +77,7 @@ public final class ArmyLifecycleService {
                 startingServer,
                 savedData.ecs(),
                 savedData.controllers(),
+                savedData.dimensions(),
                 savedData::markArmyChanged);
         logisticsEngine = new StrategicLogisticsEngine(
                 ArmiesConfig.MAX_LOGISTICS_REQUESTS,
@@ -133,6 +134,7 @@ public final class ArmyLifecycleService {
                     startingServer,
                     savedData.ecs(),
                     savedData.memberships(),
+                    savedData.dimensions(),
                     entityBridge,
                     commandService,
                     savedData::markArmyChanged);
@@ -261,10 +263,9 @@ public final class ArmyLifecycleService {
 
     public void entityLeft(Entity entity, Level level) {
         if (level instanceof ServerLevel && entity instanceof MillVillager villager) {
-            if (orderExecution != null) {
+            if (entityBridge.onLeave(villager) && orderExecution != null) {
                 orderExecution.entityLeft(villager);
             }
-            entityBridge.onLeave(villager);
         }
     }
 

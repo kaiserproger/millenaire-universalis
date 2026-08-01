@@ -21,6 +21,8 @@ import java.util.Arrays;
  */
 public final class PackedArmyEcs {
     public static final int NO_ARMY = 0;
+    /** Migrated/legacy rows without a proven target dimension never execute entity-side. */
+    public static final int UNKNOWN_DIMENSION = -1;
 
     private static final int SLOT_BITS = 20;
     private static final int SLOT_MASK = (1 << SLOT_BITS) - 1;
@@ -37,6 +39,7 @@ public final class PackedArmyEcs {
     private int[] armyOrder = new int[0];
     private int[] armyState = new int[0];
     private int[] armyUnitCount = new int[0];
+    private int[] armyTargetDimension = new int[0];
     private long[] armyPackedTargetPos = new long[0];
     private int[] armySlotToDense = new int[0];
     private int[] armySlotGeneration = new int[0];
@@ -86,6 +89,14 @@ public final class PackedArmyEcs {
     }
 
     public int createArmy(int factionId, int order, int state, long packedTargetPos) {
+        return createArmy(factionId, order, state, UNKNOWN_DIMENSION, packedTargetPos);
+    }
+
+    public int createArmy(
+            int factionId, int order, int state, int targetDimensionId, long packedTargetPos) {
+        if (targetDimensionId < UNKNOWN_DIMENSION) {
+            throw new IllegalArgumentException("Invalid army target dimension id " + targetDimensionId);
+        }
         ensureArmyDenseCapacity(armySize + 1);
         int slot = acquireArmySlot();
         int handle = makeHandle(slot, armySlotGeneration[slot]);
@@ -96,6 +107,7 @@ public final class PackedArmyEcs {
         armyOrder[dense] = order;
         armyState[dense] = state;
         armyUnitCount[dense] = 0;
+        armyTargetDimension[dense] = targetDimensionId;
         armyPackedTargetPos[dense] = packedTargetPos;
         armySlotToDense[slot] = dense;
         armyStructuralVersion++;
@@ -208,6 +220,17 @@ public final class PackedArmyEcs {
         armyPackedTargetPos[armyDenseOrThrow(handle)] = packedPos;
     }
 
+    public int armyTargetDimension(int handle) {
+        return armyTargetDimension[armyDenseOrThrow(handle)];
+    }
+
+    public void armyTargetDimension(int handle, int dimensionId) {
+        if (dimensionId < UNKNOWN_DIMENSION) {
+            throw new IllegalArgumentException("Invalid army target dimension id " + dimensionId);
+        }
+        armyTargetDimension[armyDenseOrThrow(handle)] = dimensionId;
+    }
+
     public int armyUnitCount(int handle) {
         return armyUnitCount[armyDenseOrThrow(handle)];
     }
@@ -292,6 +315,7 @@ public final class PackedArmyEcs {
         destination.order = armyOrder[dense];
         destination.state = armyState[dense];
         destination.unitCount = armyUnitCount[dense];
+        destination.targetDimension = armyTargetDimension[dense];
         destination.packedTargetPos = armyPackedTargetPos[dense];
         return true;
     }
@@ -373,6 +397,7 @@ public final class PackedArmyEcs {
             armyOrder[dense] = armyOrder[last];
             armyState[dense] = armyState[last];
             armyUnitCount[dense] = armyUnitCount[last];
+            armyTargetDimension[dense] = armyTargetDimension[last];
             armyPackedTargetPos[dense] = armyPackedTargetPos[last];
             armySlotToDense[handleSlot(movedHandle)] = dense;
         }
@@ -381,6 +406,7 @@ public final class PackedArmyEcs {
         armyOrder[last] = 0;
         armyState[last] = 0;
         armyUnitCount[last] = 0;
+        armyTargetDimension[last] = UNKNOWN_DIMENSION;
         armyPackedTargetPos[last] = 0L;
         armySlotToDense[removedSlot] = -1;
         armySlotGeneration[removedSlot] = nextGeneration(armySlotGeneration[removedSlot]);
@@ -460,6 +486,9 @@ public final class PackedArmyEcs {
         armyOrder = Arrays.copyOf(armyOrder, capacity);
         armyState = Arrays.copyOf(armyState, capacity);
         armyUnitCount = Arrays.copyOf(armyUnitCount, capacity);
+        int oldCapacity = armyTargetDimension.length;
+        armyTargetDimension = Arrays.copyOf(armyTargetDimension, capacity);
+        Arrays.fill(armyTargetDimension, oldCapacity, capacity, UNKNOWN_DIMENSION);
         armyPackedTargetPos = Arrays.copyOf(armyPackedTargetPos, capacity);
     }
 
@@ -675,6 +704,19 @@ public final class PackedArmyEcs {
             return owner.armyUnitCount[dense];
         }
 
+        public int targetDimension() {
+            checkActive();
+            return owner.armyTargetDimension[dense];
+        }
+
+        public void targetDimension(int dimensionId) {
+            checkActive();
+            if (dimensionId < UNKNOWN_DIMENSION) {
+                throw new IllegalArgumentException("Invalid army target dimension id " + dimensionId);
+            }
+            owner.armyTargetDimension[dense] = dimensionId;
+        }
+
         public long packedTargetPos() {
             checkActive();
             return owner.armyPackedTargetPos[dense];
@@ -793,6 +835,7 @@ public final class PackedArmyEcs {
         private int order;
         private int state;
         private int unitCount;
+        private int targetDimension;
         private long packedTargetPos;
 
         private ArmySnapshot() {
@@ -816,6 +859,10 @@ public final class PackedArmyEcs {
 
         public int unitCount() {
             return unitCount;
+        }
+
+        public int targetDimension() {
+            return targetDimension;
         }
 
         public long packedTargetPos() {

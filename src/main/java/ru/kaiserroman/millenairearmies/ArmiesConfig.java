@@ -17,10 +17,10 @@ public final class ArmiesConfig {
 
     public static final boolean ENABLED = bool("enabled", true);
     /**
-     * Experimental entity-side order delegation. Disabled by default until Millenaire exposes an
-     * owning-goal scheduling hook and orders persist an explicit target dimension.
+     * Bounded server-thread entity-side delegation. Operators can fail closed to state-only
+     * commands without changing persisted orders.
      */
-    public static final boolean ORDER_EXECUTION_ENABLED = bool("orderExecutionEnabled", false);
+    public static final boolean ORDER_EXECUTION_ENABLED = bool("orderExecutionEnabled", true);
     /**
      * Requested only by the isolated stress harness. No worker kernel is currently production-safe,
      * so runtime active count remains zero and non-zero requests are reported NOT_APPLICABLE.

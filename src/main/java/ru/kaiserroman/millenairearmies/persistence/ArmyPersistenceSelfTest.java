@@ -29,19 +29,19 @@ public final class ArmyPersistenceSelfTest {
     }
 
     private static void roundTripRemapsHandlesAndPreservesPrimitiveState() {
+        StableDimensionTable dimensions = new StableDimensionTable();
+        int overworld = dimensions.intern(Level.OVERWORLD.location());
+        int nether = dimensions.intern(Level.NETHER.location());
         PackedArmyEcs sourceEcs = new PackedArmyEcs(4, 8);
-        int removed = sourceEcs.createArmy(10, 1, 2, PackedArmyEcs.packBlockPos(1, 64, 2));
-        int blue = sourceEcs.createArmy(20, 3, 4, PackedArmyEcs.packBlockPos(3, 65, 4));
+        int removed = sourceEcs.createArmy(10, 1, 2, overworld, PackedArmyEcs.packBlockPos(1, 64, 2));
+        int blue = sourceEcs.createArmy(20, 3, 4, overworld, PackedArmyEcs.packBlockPos(3, 65, 4));
         sourceEcs.removeArmy(removed);
-        int red = sourceEcs.createArmy(30, 5, 6, PackedArmyEcs.packBlockPos(5, 66, 6));
+        int red = sourceEcs.createArmy(30, 5, 6, nether, PackedArmyEcs.packBlockPos(5, 66, 6));
 
         int blueUnit = sourceEcs.createUnit(blue, 11, 21, PackedArmyEcs.packBlockPos(7, 67, 8));
         int redUnit = sourceEcs.createUnit(red, 12, 22, PackedArmyEcs.packBlockPos(9, 68, 10));
         sourceEcs.createUnit(PackedArmyEcs.NO_ARMY, 13, 23, PackedArmyEcs.packBlockPos(11, 69, 12));
 
-        StableDimensionTable dimensions = new StableDimensionTable();
-        int overworld = dimensions.intern(Level.OVERWORLD.location());
-        int nether = dimensions.intern(Level.NETHER.location());
         StableItemTable items = new StableItemTable();
         int ironKey = items.intern(ResourceLocation.parse("minecraft:iron_ingot"));
         PackedFactionState factions = new PackedFactionState(2);
@@ -106,6 +106,10 @@ public final class ArmyPersistenceSelfTest {
         check(restoredRed != PackedArmyEcs.NO_ARMY, "red restored");
         check(restored.ecs().armyOrder(restoredBlue) == 3, "blue order restored");
         check(restored.ecs().armyState(restoredRed) == 6, "red state restored");
+        check(restored.ecs().armyTargetDimension(restoredBlue) == overworld,
+                "blue target dimension restored");
+        check(restored.ecs().armyTargetDimension(restoredRed) == nether,
+                "red target dimension restored");
         check(restored.ecs().armyUnitCount(restoredBlue) == 1, "blue membership restored");
         check(restored.ecs().armyUnitCount(restoredRed) == 1, "red membership restored");
         check(countUnassigned(restored.ecs()) == 1, "unassigned unit restored");
@@ -177,6 +181,17 @@ public final class ArmyPersistenceSelfTest {
         CompoundTag armies = wrongLength.getCompound("Armies");
         armies.putInt("Count", 1);
         expectIllegalArgument(() -> ArmySavedData.load(wrongLength, null), "column mismatch rejected");
+
+        PackedArmyEcs legacyEcs = new PackedArmyEcs(1, 0);
+        legacyEcs.createArmy(1, 1, 0, 0, PackedArmyEcs.packBlockPos(1, 64, 1));
+        CompoundTag legacy = new ArmySavedData(legacyEcs, new PackedCommandState())
+                .save(new CompoundTag(), null);
+        legacy.putInt("SchemaVersion", 1);
+        legacy.getCompound("Armies").remove("TargetDimensions");
+        ArmySavedData migrated = ArmySavedData.load(legacy, null);
+        int migratedArmy = armyByFaction(migrated.ecs(), 1);
+        check(migrated.ecs().armyTargetDimension(migratedArmy) == PackedArmyEcs.UNKNOWN_DIMENSION,
+                "schema-1 target dimension migrates fail-closed");
     }
 
     private static void signedGenerationHandlesRoundTrip() {

@@ -58,6 +58,15 @@ tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runOrderExecutionIntegrationSmoke', JavaExec) {
+    group = 'verification'
+    description = 'Runs order revision, auth, dimension, reload and 1000-unit allocation smoke checks.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionIntegrationSmoke'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runStrategicTelemetrySelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks allocation-free phase counters for future strategic snapshot/compute seams.'

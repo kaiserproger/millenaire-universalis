@@ -26,6 +26,7 @@ final class StrategicMoveTask extends ProgressAwareTask {
     private static final double PROGRESS_DISTANCE_SQ = 1.0D;
 
     private final PackedUnitExecutionState executionState;
+    private final OrderExecutionTelemetry telemetry;
     private final int unitHandle;
     private int armyHandle;
     private long revision;
@@ -40,9 +41,14 @@ final class StrategicMoveTask extends ProgressAwareTask {
     private double sampleY;
     private double sampleZ;
     private boolean sampled;
+    private int retargetCooldown;
 
-    StrategicMoveTask(PackedUnitExecutionState executionState, int unitHandle) {
+    StrategicMoveTask(
+            PackedUnitExecutionState executionState,
+            OrderExecutionTelemetry telemetry,
+            int unitHandle) {
         this.executionState = executionState;
+        this.telemetry = telemetry;
         this.unitHandle = unitHandle;
     }
 
@@ -61,6 +67,7 @@ final class StrategicMoveTask extends ProgressAwareTask {
         sampleY = 0.0D;
         sampleZ = 0.0D;
         sampled = false;
+        retargetCooldown = 0;
     }
 
     int unitHandle() {
@@ -100,26 +107,32 @@ final class StrategicMoveTask extends ProgressAwareTask {
                 || context.village() != null && context.village().isUnderAttack()) {
             executionState.markRetry(unitHandle, armyHandle, revision);
             finished = true;
-            navigation.stop(villager);
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
 
-        if (navigation.getDestination() == null) {
-            navigation.navigateTo(villager, target, WALK_SPEED);
+        int previousRetargetCooldown = retargetCooldown;
+        retargetCooldown = BoundedNavigationDelegation.retarget(
+                navigation, villager, target, WALK_SPEED, retargetCooldown);
+        if (retargetCooldown > previousRetargetCooldown) {
             reportProgress();
         }
         if (navigation.isArrivedSameFloor(villager, ARRIVE_DISTANCE)) {
             terminal = true;
             finished = true;
-            executionState.markTerminal(unitHandle, armyHandle, revision);
-            navigation.stop(villager);
+            if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+                telemetry.arrived();
+            }
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
         if (navigation.isAbandoned()) {
             terminal = true;
             finished = true;
-            executionState.markTerminal(unitHandle, armyHandle, revision);
-            navigation.stop(villager);
+            if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+                telemetry.blocked();
+            }
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
 
@@ -152,10 +165,18 @@ final class StrategicMoveTask extends ProgressAwareTask {
     @Override
     public void stop(GoalContext context, StopReason reason) {
         if (context != null) {
-            context.villager().getNavManager().stop(context.villager());
+            BoundedNavigationDelegation.stop(
+                    context.villager().getNavManager(), context.villager());
         }
         if (!terminal && !cancelled) {
-            executionState.markRetry(unitHandle, armyHandle, revision);
+            if (reason == StopReason.IMPOSSIBLE) {
+                terminal = true;
+                if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+                    telemetry.blocked();
+                }
+            } else {
+                executionState.markRetry(unitHandle, armyHandle, revision);
+            }
         }
         finished = true;
     }

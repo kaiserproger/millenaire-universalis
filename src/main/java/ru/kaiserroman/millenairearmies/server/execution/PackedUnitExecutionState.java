@@ -51,6 +51,16 @@ public final class PackedUnitExecutionState {
         put(unitHandle, armyHandle, revision, TERMINAL);
     }
 
+    /** Completes only the task that still owns the exact current revision. */
+    public boolean markTerminalIfCurrent(int unitHandle, int armyHandle, long revision) {
+        int row = indexOf(unitHandle);
+        if (row < 0 || armyHandles[row] != armyHandle || revisions[row] != revision) {
+            return false;
+        }
+        statuses[row] = TERMINAL;
+        return true;
+    }
+
     /** Marks an interrupted execution for a bounded later retry, but never rewinds a newer order. */
     public boolean markRetry(int unitHandle, int armyHandle, long revision) {
         int row = indexOf(unitHandle);

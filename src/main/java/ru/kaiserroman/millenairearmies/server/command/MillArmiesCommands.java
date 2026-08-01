@@ -104,7 +104,11 @@ public final class MillArmiesCommands {
             CommandContext<CommandSourceStack> context, ArmyCommandService service, long packedPosition) {
         CommandSourceStack source = context.getSource();
         int faction = getInteger(context, "faction");
-        long handle = service.createArmy(authority(source), faction, packedPosition);
+        long handle = service.createArmy(
+                authority(source),
+                faction,
+                packedPosition,
+                source.getLevel().dimension().location());
         if (handle < 0) {
             return failure(source, handle);
         }
@@ -137,7 +141,12 @@ public final class MillArmiesCommands {
         CommandSourceStack source = context.getSource();
         long unsignedArmy = getLong(context, "army");
         int army = (int) unsignedArmy;
-        long result = service.issueOrder(authority(source), army, order, packedPosition);
+        long result = service.issueOrder(
+                authority(source),
+                army,
+                order,
+                order.requiresTarget() ? source.getLevel().dimension().location() : null,
+                packedPosition);
         if (result != ArmyCommandService.SUCCESS) {
             return failure(source, result);
         }
@@ -157,6 +166,7 @@ public final class MillArmiesCommands {
             case (int) ArmyCommandService.LIMIT_REACHED -> "Configured army limit reached";
             case (int) ArmyCommandService.INVALID_FACTION -> "Invalid faction";
             case (int) ArmyCommandService.INVALID_ORDER -> "Invalid strategic order";
+            case (int) ArmyCommandService.INVALID_DIMENSION -> "Target dimension is unavailable";
             default -> "Army command failed (" + result + ')';
         };
         source.sendFailure(Component.literal(message));

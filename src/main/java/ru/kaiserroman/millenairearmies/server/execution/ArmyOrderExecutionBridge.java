@@ -5,6 +5,7 @@ import java.util.Objects;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import org.millenaire.entity.MillVillager;
+import org.millenaire.entity.VillagerNavDriver;
 import org.millenaire.goal.GoalContext;
 import org.millenaire.goal.GoalScheduler;
 import org.millenaire.goal.VillagerGoal;
@@ -14,6 +15,7 @@ import org.slf4j.Logger;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
+import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
 
@@ -34,23 +36,29 @@ import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
 public final class ArmyOrderExecutionBridge {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int UNITS_PER_TICK = 64;
+    private static final long TELEMETRY_INTERVAL_TICKS = 1_200L;
 
     private final PackedArmyOrderRevisions orderRevisions = new PackedArmyOrderRevisions();
     private final PackedUnitExecutionState unitStates = new PackedUnitExecutionState();
     private final StrategicMoveTaskPool taskPool = new StrategicMoveTaskPool();
+    private final OrderExecutionTelemetry telemetry = new OrderExecutionTelemetry();
 
     private MinecraftServer server;
     private PackedArmyEcs ecs;
     private PackedUnitMembership memberships;
+    private StableDimensionTable dimensions;
     private MillenaireEntityBridge entityBridge;
     private ArmyCommandService commandService;
     private ArmyCommandService.DirtyMarker dirtyMarker;
     private int nextMembershipRow;
+    private long nextTelemetryGameTime;
+    private long lastLoggedTransitions;
 
     public boolean start(
             MinecraftServer startingServer,
             PackedArmyEcs persistedEcs,
             PackedUnitMembership persistedMemberships,
+            StableDimensionTable persistedDimensions,
             MillenaireEntityBridge loadedEntities,
             ArmyCommandService runningCommandService,
             ArmyCommandService.DirtyMarker persistedDirtyMarker) {
@@ -64,10 +72,14 @@ public final class ArmyOrderExecutionBridge {
         if (!runningCommandService.isRunning() || runningCommandService.ecs() != persistedEcs) {
             throw new IllegalStateException("Command service must own the execution ECS");
         }
+        if (!startingServer.isSameThread()) {
+            throw new IllegalStateException("Army execution must start on the Minecraft server thread");
+        }
 
         server = startingServer;
         ecs = Objects.requireNonNull(persistedEcs, "persistedEcs");
         memberships = Objects.requireNonNull(persistedMemberships, "persistedMemberships");
+        dimensions = Objects.requireNonNull(persistedDimensions, "persistedDimensions");
         entityBridge = Objects.requireNonNull(loadedEntities, "loadedEntities");
         commandService = Objects.requireNonNull(runningCommandService, "runningCommandService");
         dirtyMarker = Objects.requireNonNull(persistedDirtyMarker, "persistedDirtyMarker");
@@ -76,10 +88,17 @@ public final class ArmyOrderExecutionBridge {
 
         PackedArmyEcs.ArmyCursor cursor = ecs.newArmyCursor();
         while (cursor.advance()) {
-            orderRevisions.observe(cursor.handle(), cursor.order(), cursor.packedTargetPos());
+            orderRevisions.observe(
+                    cursor.handle(),
+                    cursor.order(),
+                    cursor.targetDimension(),
+                    cursor.packedTargetPos());
         }
         commandService.installOrderCommitListener(this::orderCommitted);
         nextMembershipRow = 0;
+        telemetry.reset();
+        nextTelemetryGameTime = startingServer.overworld().getGameTime() + TELEMETRY_INTERVAL_TICKS;
+        lastLoggedTransitions = 0L;
         return true;
     }
 
@@ -88,6 +107,10 @@ public final class ArmyOrderExecutionBridge {
         if (server != tickingServer) {
             return;
         }
+        if (!tickingServer.isSameThread()) {
+            throw new IllegalStateException("Army execution tick escaped the Minecraft server thread");
+        }
+        maybeLogTelemetry(tickingServer.overworld().getGameTime());
         int membershipCount = memberships.size();
         if (membershipCount == 0) {
             nextMembershipRow = 0;
@@ -105,7 +128,11 @@ public final class ArmyOrderExecutionBridge {
                     nextMembershipRow = 0;
                 }
                 int row = nextMembershipRow++;
-                projectionChanged |= executeRow(row);
+                try {
+                    projectionChanged |= executeRow(row);
+                } catch (RuntimeException failure) {
+                    failClosedRow(row, failure);
+                }
             }
         } finally {
             // Coalesce a whole stripe into one SavedData/revision mutation.  The finally closes
@@ -120,6 +147,9 @@ public final class ArmyOrderExecutionBridge {
     public void entityJoined(MillVillager villager) {
         if (server == null) {
             return;
+        }
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Army entity binding escaped the Minecraft server thread");
         }
         long most = villager.getUUID().getMostSignificantBits();
         long least = villager.getUUID().getLeastSignificantBits();
@@ -138,13 +168,17 @@ public final class ArmyOrderExecutionBridge {
             return false;
         }
         commandService.installOrderCommitListener(ArmyCommandService.ArmyOrderCommitListener.NOOP);
+        logTelemetry("stop");
         server = null;
         ecs = null;
         memberships = null;
+        dimensions = null;
         entityBridge = null;
         commandService = null;
         dirtyMarker = null;
         nextMembershipRow = 0;
+        nextTelemetryGameTime = 0L;
+        lastLoggedTransitions = 0L;
         orderRevisions.clear();
         unitStates.clear();
         taskPool.clear();
@@ -153,6 +187,10 @@ public final class ArmyOrderExecutionBridge {
 
     public int trackedUnitStates() {
         return unitStates.size();
+    }
+
+    public OrderExecutionTelemetry telemetry() {
+        return telemetry;
     }
 
     private boolean executeRow(int row) {
@@ -168,7 +206,10 @@ public final class ArmyOrderExecutionBridge {
         long revision = orderRevisions.revision(armyHandle);
         if (revision == 0L) {
             revision = orderRevisions.observe(
-                    armyHandle, ecs.armyOrder(armyHandle), ecs.armyPackedTargetPos(armyHandle));
+                    armyHandle,
+                    ecs.armyOrder(armyHandle),
+                    ecs.armyTargetDimension(armyHandle),
+                    ecs.armyPackedTargetPos(armyHandle));
         }
         if (!unitStates.needsApply(unitHandle, armyHandle, revision)) {
             return false;
@@ -220,13 +261,17 @@ public final class ArmyOrderExecutionBridge {
         long packedTarget = orderRevisions.packedTarget(armyHandle);
         int targetX = PackedArmyEcs.unpackBlockX(packedTarget);
         int targetZ = PackedArmyEcs.unpackBlockZ(packedTarget);
-        if (!OrderExecutionPolicy.targetWithinBuildHeight(
+        if (!OrderExecutionPolicy.targetInLevel(
+                        dimensions,
+                        orderRevisions.targetDimensionId(armyHandle),
+                        level.dimension().location())
+                || !OrderExecutionPolicy.targetWithinBuildHeight(
                         packedTarget, level.getMinBuildHeight(), level.getMaxBuildHeight())
                 || !level.getWorldBorder().isWithinBounds(targetX + 0.5D, targetZ + 0.5D)) {
-            // The committed strategic state remains visible, but an invalid coordinate is never
-            // delegated to navigation. The optional runtime interprets targets in this unit's
-            // current dimension because phase2 persistence has no dimension column yet.
+            // The committed state remains visible, but unknown/cross-dimension/out-of-bounds
+            // targets are acknowledged as blocked and never delegated to navigation.
             unitStates.markTerminal(unitHandle, armyHandle, revision);
+            telemetry.blocked();
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         }
 
@@ -246,9 +291,16 @@ public final class ArmyOrderExecutionBridge {
         if (context == null) {
             return false;
         }
+        VillagerNavDriver navigation = villager.getNavManager();
+        if (navigation == null) {
+            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            telemetry.blocked();
+            return false;
+        }
 
         StrategicMoveTask task = taskPool.acquire(
                 unitStates,
+                telemetry,
                 unitHandle,
                 armyHandle,
                 revision,
@@ -256,9 +308,11 @@ public final class ArmyOrderExecutionBridge {
         try {
             scheduler.forceTask(task, context);
             unitStates.markRunning(unitHandle, armyHandle, revision);
+            telemetry.executing();
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         } catch (RuntimeException failure) {
-            unitStates.markRetry(unitHandle, armyHandle, revision);
+            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            telemetry.blocked();
             LOGGER.warn(
                     "Could not delegate army {} revision {} to loaded Millenaire unit {}",
                     Integer.toUnsignedString(armyHandle),
@@ -269,7 +323,75 @@ public final class ArmyOrderExecutionBridge {
         }
     }
 
-    private void orderCommitted(int armyHandle, int orderCode, long packedTargetPosition) {
-        orderRevisions.observe(armyHandle, orderCode, packedTargetPosition);
+    private void orderCommitted(
+            int armyHandle,
+            int orderCode,
+            int targetDimensionId,
+            long packedTargetPosition) {
+        orderRevisions.observe(
+                armyHandle, orderCode, targetDimensionId, packedTargetPosition);
+        telemetry.accepted();
+    }
+
+    private void failClosedRow(int row, RuntimeException failure) {
+        int unitHandle = 0;
+        int armyHandle = PackedArmyEcs.NO_ARMY;
+        long revision = 0L;
+        try {
+            if (row >= 0 && row < memberships.size()) {
+                unitHandle = memberships.unitHandleAt(row);
+                if (ecs.isUnitAlive(unitHandle)) {
+                    armyHandle = ecs.unitArmy(unitHandle);
+                    if (armyHandle != PackedArmyEcs.NO_ARMY && ecs.isArmyAlive(armyHandle)) {
+                        revision = orderRevisions.revision(armyHandle);
+                        if (revision == 0L) {
+                            revision = orderRevisions.observe(
+                                    armyHandle,
+                                    ecs.armyOrder(armyHandle),
+                                    ecs.armyTargetDimension(armyHandle),
+                                    ecs.armyPackedTargetPos(armyHandle));
+                        }
+                        if (revision > 0L) {
+                            unitStates.markTerminal(unitHandle, armyHandle, revision);
+                            telemetry.blocked();
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException quarantineFailure) {
+            failure.addSuppressed(quarantineFailure);
+        }
+        LOGGER.warn(
+                "Army order row failed closed: unit={} army={} revision={}",
+                Integer.toUnsignedString(unitHandle),
+                Integer.toUnsignedString(armyHandle),
+                revision,
+                failure);
+    }
+
+    private void maybeLogTelemetry(long gameTime) {
+        if (gameTime < nextTelemetryGameTime) {
+            return;
+        }
+        nextTelemetryGameTime = gameTime + TELEMETRY_INTERVAL_TICKS;
+        if (telemetry.transitionCount() != lastLoggedTransitions) {
+            logTelemetry("periodic");
+        }
+    }
+
+    private void logTelemetry(String reason) {
+        long transitions = telemetry.transitionCount();
+        if (transitions == 0L && "stop".equals(reason)) {
+            return;
+        }
+        LOGGER.info(
+                "[BANNEROK_ARMY_ORDER_EXECUTION] reason={} accepted={} executing={} arrived={} blocked={} tracked_units={}",
+                reason,
+                telemetry.acceptedCount(),
+                telemetry.executingCount(),
+                telemetry.arrivedCount(),
+                telemetry.blockedCount(),
+                unitStates.size());
+        lastLoggedTransitions = transitions;
     }
 }

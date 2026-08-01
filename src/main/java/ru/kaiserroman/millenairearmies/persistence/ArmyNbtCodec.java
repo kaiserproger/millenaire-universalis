@@ -9,7 +9,8 @@ import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
 
 /** Primitive-array NBT codec. All object allocation is confined to the cold save/load boundary. */
 final class ArmyNbtCodec {
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 2;
+    private static final int LEGACY_SCHEMA_VERSION = 1;
 
     private static final int MAX_ECS_ROWS = 1 << 20;
     private static final int NO_ARMY_ROW = -1;
@@ -81,6 +82,7 @@ final class ArmyNbtCodec {
         int[] armyFactions = new int[armyCount];
         int[] armyOrders = new int[armyCount];
         int[] armyStates = new int[armyCount];
+        int[] armyTargetDimensions = new int[armyCount];
         long[] armyTargets = new long[armyCount];
         IntIntTable armyRows = new IntIntTable(armyCount);
 
@@ -91,6 +93,10 @@ final class ArmyNbtCodec {
             armyFactions[row] = armyCursor.faction();
             armyOrders[row] = armyCursor.order();
             armyStates[row] = armyCursor.state();
+            armyTargetDimensions[row] = armyCursor.targetDimension();
+            if (armyTargetDimensions[row] != PackedArmyEcs.UNKNOWN_DIMENSION) {
+                requireDimensionId(dimensions, armyTargetDimensions[row], "army target");
+            }
             armyTargets[row] = armyCursor.packedTargetPos();
             armyRows.put(handle, row);
         }
@@ -101,6 +107,7 @@ final class ArmyNbtCodec {
         armyTag.putIntArray("Factions", armyFactions);
         armyTag.putIntArray("Orders", armyOrders);
         armyTag.putIntArray("States", armyStates);
+        armyTag.putIntArray("TargetDimensions", armyTargetDimensions);
         armyTag.putLongArray("Targets", armyTargets);
         root.put(TAG_ARMIES, armyTag);
 
@@ -277,9 +284,10 @@ final class ArmyNbtCodec {
     static LoadedState load(
             CompoundTag root, int maxFactionRelations, int maxCommands, int maxLogisticsRequests) {
         int schemaVersion = root.getInt(TAG_SCHEMA_VERSION);
-        if (schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion != LEGACY_SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION) {
             throw new IllegalArgumentException(
-                    "Unsupported Millenaire Armies save schema " + schemaVersion + "; expected " + SCHEMA_VERSION);
+                    "Unsupported Millenaire Armies save schema " + schemaVersion
+                            + "; expected " + LEGACY_SCHEMA_VERSION + " or " + SCHEMA_VERSION);
         }
 
         ListTag dimensionNames = root.getList(TAG_DIMENSIONS, Tag.TAG_STRING);
@@ -338,6 +346,14 @@ final class ArmyNbtCodec {
         int[] armyFactions = requiredIntArray(armyTag, "Factions", armyCount, TAG_ARMIES);
         int[] armyOrders = requiredIntArray(armyTag, "Orders", armyCount, TAG_ARMIES);
         int[] armyStates = requiredIntArray(armyTag, "States", armyCount, TAG_ARMIES);
+        int[] armyTargetDimensions;
+        if (schemaVersion >= 2) {
+            armyTargetDimensions = requiredIntArray(
+                    armyTag, "TargetDimensions", armyCount, TAG_ARMIES);
+        } else {
+            armyTargetDimensions = new int[armyCount];
+            java.util.Arrays.fill(armyTargetDimensions, PackedArmyEcs.UNKNOWN_DIMENSION);
+        }
         long[] armyTargets = requiredLongArray(armyTag, "Targets", armyCount, TAG_ARMIES);
 
         CompoundTag unitTag = root.getCompound(TAG_UNITS);
@@ -354,8 +370,16 @@ final class ArmyNbtCodec {
         PackedUnitMembership memberships = new PackedUnitMembership();
         int[] restoredArmyHandles = new int[armyCount];
         for (int armyRow = 0; armyRow < armyCount; armyRow++) {
+            int targetDimension = armyTargetDimensions[armyRow];
+            if (targetDimension != PackedArmyEcs.UNKNOWN_DIMENSION) {
+                requireDimensionId(dimensions, targetDimension, "army target");
+            }
             restoredArmyHandles[armyRow] = ecs.createArmy(
-                    armyFactions[armyRow], armyOrders[armyRow], armyStates[armyRow], armyTargets[armyRow]);
+                    armyFactions[armyRow],
+                    armyOrders[armyRow],
+                    armyStates[armyRow],
+                    targetDimension,
+                    armyTargets[armyRow]);
         }
 
         CompoundTag controllerTag = root.getCompound(TAG_CONTROLLERS);

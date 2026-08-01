@@ -91,7 +91,11 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             return;
         }
         ArmyCommandAuthority authority = authority(player);
-        long result = commands.createArmy(authority, intent.factionId(), intent.homeVillagePosition());
+        long result = commands.createArmy(
+                authority,
+                intent.factionId(),
+                intent.homeVillagePosition(),
+                player.serverLevel().dimension().location());
         if (result >= 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }
@@ -107,7 +111,12 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
         if (order == null) {
             return;
         }
-        long result = commands.issueOrder(authority(player), intent.armyHandle(), order, intent.primaryPosition());
+        long result = commands.issueOrder(
+                authority(player),
+                intent.armyHandle(),
+                order,
+                order.requiresTarget() ? player.serverLevel().dimension().location() : null,
+                intent.primaryPosition());
         if (result == ArmyCommandService.SUCCESS) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }

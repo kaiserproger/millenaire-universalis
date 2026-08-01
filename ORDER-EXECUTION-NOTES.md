@@ -1,10 +1,9 @@
-# Millenaire army order execution (experimental opt-in)
+# Millenaire army order execution
 
-`orderExecutionEnabled` defaults to `false`. With the production default the lifecycle never
-constructs `ArmyOrderExecutionBridge`, never installs its order listener, never creates a task, and
-never calls a Millenaire AI/navigation API. Commands, persistence, networking and UI remain
-state-only. The server operator must explicitly set `orderExecutionEnabled=true` to exercise the
-experimental entity-side bridge described below.
+`orderExecutionEnabled` defaults to `true` after the revision/rebind/dimension/auth/persistence
+self-tests and the 1,000-unit allocation smoke passed. Setting it to `false` remains a fail-closed
+state-only mode: the lifecycle constructs no `ArmyOrderExecutionBridge`, installs no execution
+listener, creates no execution task, and calls no Millenaire AI/navigation API.
 
 The execution bridge uses Millenaire 9.0.0-beta.2 public APIs only. `MOVE`, `RALLY`, and
 `LOGISTICS` install a retained `VillagerTask` through `GoalScheduler.forceTask`; the task delegates
@@ -14,6 +13,8 @@ abandoned, a concrete combat signal appears, or a newer committed army order can
 There is deliberately no periodic route reset. In beta.2 the navigation driver owns the active
 destination, `WaypointNavigator`, local/long-distance stuck counters, and teleport recovery.
 Stopping and recreating the task on a timer would discard that state and repeat long-route work.
+If another subsystem clears or replaces the exact destination, the retained task may re-delegate
+the committed endpoint at most once per 20 ticks; an unchanged route is allocation-free.
 
 ## Beta.2 scheduler constraint
 
@@ -38,11 +39,10 @@ route finishes or Millenaire abandons it. This is a known limitation of the beta
 
 ## Target dimension and bounds
 
-Phase2 persisted orders contain a packed block position but no dimension id. Consequently the
-experimental bridge cannot prove that an issuer selected the target in the unit's dimension. It
-interprets the coordinates in each loaded unit's current dimension and rejects targets outside
-that level's build height or world border before touching navigation. Cross-dimension execution is
-not production-safe and is another reason the entity bridge is disabled by default.
+Orders persist a stable dimension-dictionary id together with the packed block position. The
+bridge requires an exact match with the loaded unit's `ServerLevel`, then validates build height
+and world border before touching navigation. Schema-1 rows migrate to `UNKNOWN_DIMENSION` and stay
+blocked until a controller reissues the target; cross-dimension and invalid targets fail closed.
 
 ## Cancellation
 

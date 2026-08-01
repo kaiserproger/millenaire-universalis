@@ -43,7 +43,7 @@ public final class SarvarMillenaireArmies {
         if (lifecycle.start(event.getServer())) {
             LOGGER.info(
                     "Millenaire Armies strategy, recruitment, diplomacy, logistics and networking are ready; entity-side order delegation={}; combat/pathfinding remain Millenaire-owned",
-                    ArmiesConfig.ORDER_EXECUTION_ENABLED ? "experimental opt-in" : "disabled (state-only orders)");
+                    ArmiesConfig.ORDER_EXECUTION_ENABLED ? "enabled (bounded server-thread bridge)" : "disabled (state-only orders)");
         }
     }
 

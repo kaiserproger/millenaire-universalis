@@ -15,6 +15,7 @@ final class StrategicMoveTaskPool {
 
     StrategicMoveTask acquire(
             PackedUnitExecutionState state,
+            OrderExecutionTelemetry telemetry,
             int unitHandle,
             int armyHandle,
             long revision,
@@ -24,8 +25,8 @@ final class StrategicMoveTaskPool {
         if (unitHandles[slot] != unitHandle) {
             unitHandles[slot] = unitHandle;
             nextLanes[slot] = 0;
-            laneZero[slot] = new StrategicMoveTask(state, unitHandle);
-            laneOne[slot] = new StrategicMoveTask(state, unitHandle);
+            laneZero[slot] = new StrategicMoveTask(state, telemetry, unitHandle);
+            laneOne[slot] = new StrategicMoveTask(state, telemetry, unitHandle);
         }
         int lane = nextLanes[slot];
         nextLanes[slot] = (byte) (lane ^ 1);
