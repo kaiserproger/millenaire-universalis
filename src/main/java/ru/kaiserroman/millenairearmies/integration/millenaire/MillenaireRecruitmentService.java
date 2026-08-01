@@ -392,6 +392,23 @@ public final class MillenaireRecruitmentService {
         return recruitTarget(authority, armyHandle, level, villager.blockPosition(), villager);
     }
 
+    /**
+     * UI adapter for one explicitly selected loaded fighter. The player's actual level and
+     * position remain authoritative, so a forged UUID cannot bypass the normal proximity,
+     * settlement-control, faction, availability, ledger or supply checks in {@link
+     * #recruitTarget}.
+     */
+    public long recruitSelected(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            ServerLevel actorLevel,
+            BlockPos actorPosition,
+            long villagerUuidMost,
+            long villagerUuidLeast) {
+        MillVillager villager = entityBridge.findLoaded(villagerUuidMost, villagerUuidLeast);
+        return recruitTarget(authority, armyHandle, actorLevel, actorPosition, villager);
+    }
+
     /** Unloaded records are never recruited; this method remains as a fail-closed API boundary. */
     public long recruitRecord(
             ArmyCommandAuthority authority,

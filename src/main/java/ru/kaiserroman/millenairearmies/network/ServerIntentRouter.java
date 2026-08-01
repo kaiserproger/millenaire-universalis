@@ -16,6 +16,9 @@ public final class ServerIntentRouter {
         public void createArmy(ServerPlayer player, CreateArmyIntent intent) {}
 
         @Override
+        public void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent) {}
+
+        @Override
         public void issueOrder(ServerPlayer player, IssueOrderIntent intent) {}
     };
 
@@ -45,6 +48,10 @@ public final class ServerIntentRouter {
 
     static void dispatch(ServerPlayer player, CreateArmyIntent intent) {
         sink.createArmy(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, RecruitUnitsIntent intent) {
+        sink.recruitUnits(player, intent);
     }
 
     static void dispatch(ServerPlayer player, IssueOrderIntent intent) {

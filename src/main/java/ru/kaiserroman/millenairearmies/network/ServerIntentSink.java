@@ -14,5 +14,7 @@ public interface ServerIntentSink {
 
     void createArmy(ServerPlayer player, CreateArmyIntent intent);
 
+    void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent);
+
     void issueOrder(ServerPlayer player, IssueOrderIntent intent);
 }

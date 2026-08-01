@@ -120,7 +120,7 @@ final class StrategicMoveTask extends ProgressAwareTask {
         if (navigation.isArrivedSameFloor(villager, ARRIVE_DISTANCE)) {
             terminal = true;
             finished = true;
-            if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+            if (executionState.markArrivedIfCurrent(unitHandle, armyHandle, revision)) {
                 telemetry.arrived();
             }
             BoundedNavigationDelegation.stop(navigation, villager);
@@ -129,7 +129,7 @@ final class StrategicMoveTask extends ProgressAwareTask {
         if (navigation.isAbandoned()) {
             terminal = true;
             finished = true;
-            if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+            if (executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision)) {
                 telemetry.blocked();
             }
             BoundedNavigationDelegation.stop(navigation, villager);
@@ -171,7 +171,7 @@ final class StrategicMoveTask extends ProgressAwareTask {
         if (!terminal && !cancelled) {
             if (reason == StopReason.IMPOSSIBLE) {
                 terminal = true;
-                if (executionState.markTerminalIfCurrent(unitHandle, armyHandle, revision)) {
+                if (executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision)) {
                     telemetry.blocked();
                 }
             } else {

@@ -179,7 +179,13 @@ public final class ArmyLifecycleService {
                 UnitDescriptorCatalog.INSTANCE,
                 savedData.memberships().size());
         networkService = new ServerArmyNetworkService(
-                savedData, commandService, factionProjection, recruitmentService, settlementEconomy);
+                savedData,
+                commandService,
+                factionProjection,
+                villageIndex,
+                recruitmentService,
+                orderExecution,
+                settlementEconomy);
         ServerIntentRouter.install(networkService);
         phaseStart = System.nanoTime();
         int entityChanges = entityBridge.reconcile(villageIndex);

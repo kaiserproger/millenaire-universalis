@@ -18,13 +18,16 @@ public final class ClientStateEvents {
     public static void onLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         ClientArmyState.INSTANCE.listener(NetworkArmyClientMirror.INSTANCE);
         ClientFactionMetadataState.INSTANCE.listener(NetworkArmyClientMirror.INSTANCE);
+        ClientArmyRosterState.INSTANCE.listener(() -> NetworkArmyClientMirror.INSTANCE.rosterChanged());
     }
 
     @SubscribeEvent
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientArmyState.INSTANCE.reset();
         ClientFactionMetadataState.INSTANCE.reset();
+        ClientArmyRosterState.INSTANCE.reset();
         ClientArmyState.INSTANCE.listener(null);
         ClientFactionMetadataState.INSTANCE.listener(null);
+        ClientArmyRosterState.INSTANCE.listener(null);
     }
 }

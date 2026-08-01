@@ -229,6 +229,50 @@ public final class ArmyOrderExecutionBridge {
         return telemetry;
     }
 
+    /** Aggregates acknowledgements for the exact current order without changing execution state. */
+    public byte armyExecutionStatus(int armyHandle) {
+        if (server == null || ecs == null || memberships == null || !ecs.isArmyAlive(armyHandle)) {
+            return ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_BLOCKED;
+        }
+        long revision = orderRevisions.revision(armyHandle);
+        int units = 0;
+        int accepted = 0;
+        int executing = 0;
+        int arrived = 0;
+        int blocked = 0;
+        for (int row = 0; row < memberships.size(); row++) {
+            int unit = memberships.unitHandleAt(row);
+            if (!ecs.isUnitAlive(unit) || ecs.unitArmy(unit) != armyHandle) {
+                continue;
+            }
+            units++;
+            byte status = revision == 0L || unitStates.needsApply(unit, armyHandle, revision)
+                    ? PackedUnitExecutionState.PENDING
+                    : unitStates.status(unit);
+            if (status == PackedUnitExecutionState.RUNNING) {
+                executing++;
+            } else if (status == PackedUnitExecutionState.ARRIVED) {
+                arrived++;
+            } else if (status == PackedUnitExecutionState.BLOCKED) {
+                blocked++;
+            } else {
+                accepted++;
+            }
+        }
+        if (units == 0 || accepted > 0) {
+            return ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_ACCEPTED;
+        }
+        if (executing > 0) {
+            return ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_EXECUTING;
+        }
+        if (blocked > 0) {
+            return ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_BLOCKED;
+        }
+        return arrived == units
+                ? ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_ARRIVED
+                : ru.kaiserroman.millenairearmies.network.ArmiesProtocol.EXECUTION_ACCEPTED;
+    }
+
     private boolean executeRow(int row) {
         int unitHandle = memberships.unitHandleAt(row);
         if (!ecs.isUnitAlive(unitHandle)) {
@@ -285,12 +329,12 @@ public final class ArmyOrderExecutionBridge {
         if (orderCode == StrategicArmyOrder.HOLD.code()) {
             // Any bridge-owned predecessor has already been cancelled above. HOLD never force-stops
             // an unrelated Millenaire task and simply acknowledges the new persistent projection.
-            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            unitStates.markArrived(unitHandle, armyHandle, revision);
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         }
         if (orderCode < StrategicArmyOrder.MOVE.code()
                 || orderCode > StrategicArmyOrder.LOGISTICS.code()) {
-            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            unitStates.markBlocked(unitHandle, armyHandle, revision);
             return false;
         }
 
@@ -306,7 +350,7 @@ public final class ArmyOrderExecutionBridge {
                 || !level.getWorldBorder().isWithinBounds(targetX + 0.5D, targetZ + 0.5D)) {
             // The committed state remains visible, but unknown/cross-dimension/out-of-bounds
             // targets are acknowledged as blocked and never delegated to navigation.
-            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            unitStates.markBlocked(unitHandle, armyHandle, revision);
             telemetry.blocked();
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         }
@@ -329,7 +373,7 @@ public final class ArmyOrderExecutionBridge {
         }
         VillagerNavDriver navigation = villager.getNavManager();
         if (navigation == null) {
-            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            unitStates.markBlocked(unitHandle, armyHandle, revision);
             telemetry.blocked();
             return false;
         }
@@ -347,7 +391,7 @@ public final class ArmyOrderExecutionBridge {
             telemetry.executing();
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         } catch (RuntimeException failure) {
-            unitStates.markTerminal(unitHandle, armyHandle, revision);
+            unitStates.markBlocked(unitHandle, armyHandle, revision);
             telemetry.blocked();
             LOGGER.warn(
                     "Could not delegate army {} revision {} to loaded Millenaire unit {}",
@@ -388,7 +432,7 @@ public final class ArmyOrderExecutionBridge {
                                     ecs.armyPackedTargetPos(armyHandle));
                         }
                         if (revision > 0L) {
-                            unitStates.markTerminal(unitHandle, armyHandle, revision);
+                            unitStates.markBlocked(unitHandle, armyHandle, revision);
                             telemetry.blocked();
                         }
                     }

@@ -2,13 +2,16 @@ package ru.kaiserroman.millenairearmies.client.state;
 
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
 import ru.kaiserroman.millenairearmies.network.ArmyStateDeltaPayload;
 import ru.kaiserroman.millenairearmies.network.ArmyStateSnapshotPayload;
+import ru.kaiserroman.millenairearmies.network.ArmyRosterSnapshotPayload;
 import ru.kaiserroman.millenairearmies.network.FactionMetadataPayload;
 import ru.kaiserroman.millenairearmies.network.IssueOrderIntent;
+import ru.kaiserroman.millenairearmies.network.RecruitUnitsIntent;
 
 /** Run directly with the NeoForge development classpath; no test framework required. */
 public final class NetworkStateSelfTest {
@@ -18,9 +21,43 @@ public final class NetworkStateSelfTest {
         opaqueSignedHandlesRoundTrip();
         snapshotCodecAndMirrorRoundTrip();
         factionMetadataCodecAndMirrorRoundTrip();
+        rosterAndRecruitmentCodecRoundTrip();
         deltasUpdateWithoutObjectRowsAndDetectGaps();
         protocolBoundsAreEnforced();
         System.out.println("Armies network/client-state self-test passed");
+    }
+
+    private static void rosterAndRecruitmentCodecRoundTrip() {
+        ArmyRosterSnapshotPayload roster = new ArmyRosterSnapshotPayload(
+                14L,
+                3,
+                ArmiesProtocol.ACTION_RECRUIT,
+                ArmiesProtocol.RESULT_ACCEPTED,
+                1,
+                1,
+                1,
+                new int[] {7, 25, 1},
+                new long[] {11L, 12L, 99L},
+                new String[] {"Caen", "millenaire:norman"},
+                new int[] {18},
+                new long[] {21L, 22L, 11L, 12L},
+                new String[] {"Agnès Martin", "Guard"});
+        ArmyRosterSnapshotPayload decoded = roundTrip(ArmyRosterSnapshotPayload.STREAM_CODEC, roster);
+        check(decoded.recruitCount() == 1
+                        && "Agnès Martin".equals(decoded.recruitString(0, ArmyRosterSnapshotPayload.RECRUIT_NAME)),
+                "bounded roster UTF-8 round-trip");
+
+        RecruitUnitsIntent intent = new RecruitUnitsIntent(
+                4, 0x8000_002a, 11L, 12L, 14L, 1, new long[] {21L, 22L});
+        RecruitUnitsIntent decodedIntent = roundTrip(RecruitUnitsIntent.STREAM_CODEC, intent);
+        check(decodedIntent.armyHandle() == 0x8000_002a
+                        && decodedIntent.villagerUuidBits()[1] == 22L,
+                "bounded selected recruit round-trip");
+        expectIllegal(() -> new RecruitUnitsIntent(
+                        1, 1, 1L, 2L, 0L,
+                        ArmiesProtocol.MAX_RECRUITS_PER_INTENT + 1,
+                        new long[(ArmiesProtocol.MAX_RECRUITS_PER_INTENT + 1) * 2]),
+                "oversized recruit selection rejected");
     }
 
     private static void factionMetadataCodecAndMirrorRoundTrip() {
@@ -70,6 +107,7 @@ public final class NetworkStateSelfTest {
                 17,
                 highGenerationHandle,
                 ArmiesProtocol.ORDER_MOVE,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
                 123L,
                 456L,
                 91,
@@ -200,7 +238,9 @@ public final class NetworkStateSelfTest {
                 new long[(ArmiesProtocol.MAX_DELTA_ROWS + 1) * ArmiesProtocol.LONG_COLUMNS],
                 new byte[(ArmiesProtocol.MAX_DELTA_ROWS + 1) * ArmiesProtocol.BYTE_COLUMNS]),
                 "oversized delta rejected");
-        expectIllegal(() -> new IssueOrderIntent(1, -99, (byte) 99, 0, 0, -1, 0, (byte) 0),
+        expectIllegal(() -> new IssueOrderIntent(1, -99, (byte) 99,
+                        ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+                        0, 0, -1, 0, (byte) 0),
                 "unknown order rejected without rejecting signed handle");
     }
 

@@ -7,7 +7,7 @@ package ru.kaiserroman.millenairearmies.network;
  * opaque 32-bit values: their sign has no meaning and must never be used as validation.
  */
 public final class ArmiesProtocol {
-    public static final String VERSION = "1";
+    public static final String VERSION = "2";
 
     public static final byte SECTION_FACTIONS = 1;
     public static final byte SECTION_ARMIES = 1 << 1;
@@ -64,6 +64,28 @@ public final class ArmiesProtocol {
     public static final int MAX_DELTA_ROWS = 2_048;
     public static final int MAX_REQUEST_CURSOR = 16_777_215;
     public static final int MAX_CREATE_UNITS = 1_024;
+    public static final int MAX_CONTROLLED_SETTLEMENTS = 256;
+    public static final int MAX_AVAILABLE_RECRUITS = 2_048;
+    public static final int MAX_RECRUITS_PER_INTENT = 64;
+
+    public static final byte ACTION_NONE = 0;
+    public static final byte ACTION_CREATE_ARMY = 1;
+    public static final byte ACTION_RECRUIT = 2;
+    public static final byte ACTION_ISSUE_ORDER = 3;
+
+    public static final int RESULT_NONE = 0;
+    public static final int RESULT_ACCEPTED = 1;
+    public static final int RESULT_STALE = 2;
+    public static final int RESULT_PERMISSION_DENIED = 3;
+    public static final int RESULT_NOT_FOUND = 4;
+    public static final int RESULT_INVALID = 5;
+    public static final int RESULT_LIMIT_REACHED = 6;
+    public static final int RESULT_PARTIAL = 7;
+
+    public static final byte EXECUTION_ACCEPTED = 0;
+    public static final byte EXECUTION_EXECUTING = 1;
+    public static final byte EXECUTION_ARRIVED = 2;
+    public static final byte EXECUTION_BLOCKED = 3;
 
     public static final byte ORDER_FLAG_SECONDARY_POSITION = 1;
     public static final byte ORDER_FLAG_SUBJECT_ENTITY = 1 << 1;

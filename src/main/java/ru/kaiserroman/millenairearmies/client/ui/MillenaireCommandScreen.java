@@ -4,10 +4,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import ru.kaiserroman.millenairearmies.client.ArmyClientMirror;
 import ru.kaiserroman.millenairearmies.client.ArmyClientState;
+import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
 
 /**
  * Asset-independent strategic command screen inspired by grand-strategy information density.
@@ -22,6 +24,14 @@ public final class MillenaireCommandScreen extends Screen {
     private static final Component NO_ORDERS = Component.translatable("gui.millenaire_armies.empty.orders");
     private static final Component NO_LOGISTICS = Component.translatable("gui.millenaire_armies.empty.logistics");
     private static final Component NO_LOGISTICS_HINT = Component.translatable("gui.millenaire_armies.empty.logistics_hint");
+    private static final Component NO_SETTLEMENTS = Component.translatable("gui.millenaire_armies.empty.settlements");
+    private static final Component NO_RECRUITS = Component.translatable("gui.millenaire_armies.empty.recruits");
+    private static final Component SELECT_ARMY = Component.translatable("gui.millenaire_armies.recruit.select_army");
+    private static final Component SELECT_RECRUITS = Component.translatable("gui.millenaire_armies.recruit.select_recruits");
+    private static final Component CREATE_ARMY = Component.translatable("gui.millenaire_armies.action.create_army");
+    private static final Component RECRUIT = Component.translatable("gui.millenaire_armies.action.recruit");
+    private static final Component RETRY = Component.translatable("gui.millenaire_armies.action.retry");
+    private static final Component SYNC_TIMEOUT = Component.translatable("gui.millenaire_armies.state.timeout");
     private static final Component COMMAND_UNAVAILABLE = Component.translatable("gui.millenaire_armies.command.unavailable");
     private static final Component COMMAND_SENT = Component.translatable("gui.millenaire_armies.command.sent");
     private static final Component CANCEL = Component.translatable("gui.millenaire_armies.action.cancel");
@@ -62,6 +72,9 @@ public final class MillenaireCommandScreen extends Screen {
     private static final Component LABEL_PRIORITY = Component.translatable("gui.millenaire_armies.label.priority");
     private static final Component LABEL_DIPLOMACY = Component.translatable("gui.millenaire_armies.section.diplomacy");
     private static final Component LABEL_COMMAND = Component.translatable("gui.millenaire_armies.section.command");
+    private static final Component SECTION_SETTLEMENTS = Component.translatable("gui.millenaire_armies.section.settlements");
+    private static final Component LABEL_RECRUITS = Component.translatable("gui.millenaire_armies.section.recruits");
+    private static final Component LABEL_TARGET_ARMY = Component.translatable("gui.millenaire_armies.label.target_army");
 
     private static final Component[] RELATIONS = translatedArray("gui.millenaire_armies.relation.",
             "hostile", "neutral", "friendly", "allied", "vassal");
@@ -107,6 +120,15 @@ public final class MillenaireCommandScreen extends Screen {
     private boolean hasSelectedArmy;
     private long selectedOrderId = -1L;
     private int selectedLogisticsId = -1;
+    private long selectedSettlementMost;
+    private long selectedSettlementLeast;
+    private boolean hasSelectedSettlement;
+    private int selectedRecruitRow = -1;
+    private int rosterColumn;
+    private int settlementScroll;
+    private int recruitScroll;
+    private final long[] selectedRecruitBits = new long[ArmiesProtocol.MAX_RECRUITS_PER_INTENT * 2];
+    private int selectedRecruitCount;
 
     private ArmyClientMirror cachedMirror = ArmyClientMirror.EMPTY;
     private long cachedRevision = Long.MIN_VALUE;
@@ -124,7 +146,6 @@ public final class MillenaireCommandScreen extends Screen {
     private String selectedArmyMoraleText = "0%";
     private String selectedArmySupplyText = "0%";
     private String selectedArmySpeedText = "0%";
-    private String selectedOrderIssuedText = "0";
     private String selectedLogisticsCargoText = "";
     private String selectedLogisticsRouteText = "";
     private String selectedLogisticsProgressText = "0%";
@@ -133,6 +154,7 @@ public final class MillenaireCommandScreen extends Screen {
     private Component feedback;
     private long feedbackUntilMillis;
     private long cancelConfirmUntilMillis;
+    private int lastAcknowledgementId;
 
     private Button holdButton;
     private Button moveButton;
@@ -140,9 +162,21 @@ public final class MillenaireCommandScreen extends Screen {
     private Button logisticsButton;
     private Button cancelButton;
     private Button priorityButton;
+    private Button createArmyButton;
+    private Button recruitButton;
+    private Button retryButton;
+    private int syncTicks;
+    private int waitingTicks;
 
     public MillenaireCommandScreen() {
         super(TITLE);
+    }
+
+    public MillenaireCommandScreen(int preferredArmyId) {
+        this();
+        selectedArmyId = preferredArmyId;
+        hasSelectedArmy = true;
+        tab = StrategicTab.ARMIES;
     }
 
     @Override
@@ -185,6 +219,15 @@ public final class MillenaireCommandScreen extends Screen {
                         Component.translatable("gui.millenaire_armies.action.priority"), ignored -> togglePriority())
                 .bounds(actionX + secondaryButtonWidth + 4, actionY, secondaryButtonWidth, 20)
                 .build());
+        createArmyButton = addRenderableWidget(Button.builder(CREATE_ARMY, ignored -> createArmy())
+                .bounds(actionX, actionY, secondaryButtonWidth, 20)
+                .build());
+        recruitButton = addRenderableWidget(Button.builder(RECRUIT, ignored -> recruitSelected())
+                .bounds(actionX + secondaryButtonWidth + 4, actionY, secondaryButtonWidth, 20)
+                .build());
+        retryButton = addRenderableWidget(Button.builder(RETRY, ignored -> retrySync())
+                .bounds(actionX, actionY, secondaryButtonWidth, 20)
+                .build());
 
         addRenderableWidget(Button.builder(CLOSE, ignored -> onClose())
                 .bounds(panelX + panelWidth - 66, actionY, 56, 20)
@@ -205,6 +248,16 @@ public final class MillenaireCommandScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        waitingTicks = cachedMirror.isReady() ? 0 : waitingTicks + 1;
+        if (++syncTicks >= 20) {
+            syncTicks = 0;
+            ArmyClientState.current().requestFullSync();
+        }
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
         refreshMirror(false);
@@ -212,7 +265,7 @@ public final class MillenaireCommandScreen extends Screen {
 
         if (!cachedMirror.isReady()) {
             graphics.drawCenteredString(font, WAITING, width / 2, contentY + contentHeight / 2 - 5, MUTED);
-            String status = safe(cachedMirror.statusText());
+            String status = waitingTicks >= 100 ? SYNC_TIMEOUT.getString() : safe(cachedMirror.statusText());
             if (!status.isEmpty()) {
                 graphics.drawCenteredString(font, status, width / 2, contentY + contentHeight / 2 + 10, MUTED);
             }
@@ -220,6 +273,7 @@ public final class MillenaireCommandScreen extends Screen {
             graphics.enableScissor(contentX + 1, contentY + 1, contentX + contentWidth - 1, contentY + contentHeight - 1);
             switch (tab) {
                 case OVERVIEW -> renderOverview(graphics);
+                case RECRUITMENT -> renderRecruitment(graphics, mouseX, mouseY);
                 case FACTIONS -> renderFactions(graphics, mouseX, mouseY);
                 case ARMIES -> renderArmies(graphics, mouseX, mouseY);
                 case ORDERS -> renderOrders(graphics, mouseX, mouseY);
@@ -274,6 +328,84 @@ public final class MillenaireCommandScreen extends Screen {
         drawOverviewArmy(graphics, contentX + half + 15, boxY + 17, detailStep);
     }
 
+    private void renderRecruitment(GuiGraphics graphics, int mouseX, int mouseY) {
+        int split = contentX + listWidth;
+        graphics.fill(contentX + 1, contentY + 1, split, contentY + contentHeight - 1, PANEL_ALT);
+        graphics.fill(split, contentY + 1, split + 1, contentY + contentHeight - 1, BORDER_DARK);
+        graphics.drawString(font, SECTION_SETTLEMENTS, contentX + 7, contentY + 6, MUTED, false);
+        graphics.drawString(font, LABEL_RECRUITS, split + 8, contentY + 6, MUTED, false);
+
+        int settlementCount = cachedMirror.settlementCount();
+        int listY = contentY + 20;
+        int listHeight = contentHeight - 35;
+        int visible = Math.max(1, listHeight / ROW_HEIGHT);
+        settlementScroll = clampScroll(settlementScroll, settlementCount, visible);
+        if (settlementCount == 0) {
+            graphics.drawCenteredString(font, NO_SETTLEMENTS,
+                    contentX + listWidth / 2, contentY + contentHeight / 2, MUTED);
+        } else {
+            int end = Math.min(settlementCount, settlementScroll + visible);
+            for (int row = settlementScroll; row < end; row++) {
+                int y = listY + (row - settlementScroll) * ROW_HEIGHT;
+                boolean selected = settlementSelected(row);
+                boolean hovered = mouseX >= contentX + 3 && mouseX < split - 2
+                        && mouseY >= y && mouseY < y + ROW_HEIGHT - 2;
+                if (selected || hovered) {
+                    graphics.fill(contentX + 3, y, split - 2, y + ROW_HEIGHT - 2,
+                            selected ? SELECTED : HOVER);
+                }
+                graphics.drawString(font, safe(cachedMirror.settlementName(row)),
+                        contentX + 8, y + 5, selected ? GOLD : TEXT, true);
+                Component summary = Component.translatable("gui.millenaire_armies.summary.settlement",
+                        cachedMirror.settlementPopulation(row),
+                        cachedMirror.settlementAvailableRecruitCount(row));
+                graphics.drawString(font, summary, contentX + 8, y + 16, MUTED, false);
+            }
+        }
+
+        int recruitCount = filteredRecruitCount();
+        recruitScroll = clampScroll(recruitScroll, recruitCount, visible);
+        int rightX = split + 2;
+        int rightWidth = contentX + contentWidth - rightX;
+        if (!hasSelectedSettlement) {
+            graphics.drawCenteredString(font, NO_RECRUITS,
+                    rightX + rightWidth / 2, contentY + contentHeight / 2, MUTED);
+            return;
+        }
+        if (recruitCount == 0) {
+            graphics.drawCenteredString(font, NO_RECRUITS,
+                    rightX + rightWidth / 2, contentY + contentHeight / 2, MUTED);
+        } else {
+            int end = Math.min(recruitCount, recruitScroll + visible);
+            for (int ordinal = recruitScroll; ordinal < end; ordinal++) {
+                int row = filteredRecruitRow(ordinal);
+                int y = listY + (ordinal - recruitScroll) * ROW_HEIGHT;
+                boolean selected = recruitSelected(row);
+                boolean focused = selectedRecruitRow == row;
+                boolean hovered = mouseX >= rightX + 2 && mouseX < contentX + contentWidth - 2
+                        && mouseY >= y && mouseY < y + ROW_HEIGHT - 2;
+                if (selected || focused || hovered) {
+                    graphics.fill(rightX + 2, y, contentX + contentWidth - 2, y + ROW_HEIGHT - 2,
+                            selected ? SELECTED : HOVER);
+                }
+                String marker = selected ? "✓ " : "";
+                graphics.drawString(font, marker + safe(cachedMirror.recruitName(row)),
+                        rightX + 7, y + 5, selected ? GOLD : TEXT, true);
+                Component summary = Component.translatable("gui.millenaire_armies.summary.recruit",
+                        safe(cachedMirror.recruitRole(row)), cachedMirror.recruitStrength(row));
+                graphics.drawString(font, summary, rightX + 7, y + 16, MUTED, false);
+            }
+        }
+
+        Component state = !hasSelectedArmy
+                ? SELECT_ARMY
+                : selectedRecruitCount == 0
+                        ? SELECT_RECRUITS
+                        : Component.translatable("gui.millenaire_armies.recruit.ready",
+                                selectedRecruitCount, safe(selectedArmyName()));
+        graphics.drawString(font, state, split + 8, contentY + contentHeight - 12, GOLD, false);
+    }
+
     private void drawOverviewFaction(GuiGraphics graphics, int x, int y, int step) {
         int index = findFactionIndex(selectedFactionId);
         if (index < 0 && cachedMirror.factionCount() > 0) {
@@ -284,7 +416,7 @@ public final class MillenaireCommandScreen extends Screen {
             return;
         }
         graphics.drawString(font, safe(cachedMirror.factionName(index)), x, y, GOLD, true);
-        drawPair(graphics, x, y + step, LABEL_CULTURE, safe(cachedMirror.factionName(index)));
+        drawPair(graphics, x, y + step, LABEL_CULTURE, safe(cachedMirror.factionCultureName(index)));
         drawPair(graphics, x, y + step * 2, LABEL_RELATION, relationText(cachedMirror.factionRelationCode(index)));
         drawPair(graphics, x, y + step * 3, LABEL_SETTLEMENTS, selectedFactionSettlementText);
         drawPair(graphics, x, y + step * 4, LABEL_POPULATION, selectedFactionPopulationText);
@@ -316,7 +448,7 @@ public final class MillenaireCommandScreen extends Screen {
         int y = contentY + 6;
         int step = detailStep(8);
         graphics.drawString(font, safe(cachedMirror.factionName(index)), x, y, GOLD, true);
-        drawPair(graphics, x, y + 14, LABEL_CULTURE, safe(cachedMirror.factionName(index)));
+        drawPair(graphics, x, y + 14, LABEL_CULTURE, safe(cachedMirror.factionCultureName(index)));
         drawPair(graphics, x, y + 14 + step, LABEL_RELATION, relationText(cachedMirror.factionRelationCode(index)));
         drawPair(graphics, x, y + 14 + step * 2, LABEL_REPUTATION, selectedFactionReputationText);
         drawPair(graphics, x, y + 14 + step * 3, LABEL_INFLUENCE, selectedFactionInfluenceText);
@@ -360,7 +492,6 @@ public final class MillenaireCommandScreen extends Screen {
         drawPair(graphics, x, y + 22, LABEL_ORDER, orderText(cachedMirror.orderTypeCode(index)));
         drawPair(graphics, x, y + 38, LABEL_TARGET, safe(cachedMirror.orderTarget(index)));
         drawPair(graphics, x, y + 54, LABEL_STATE, safe(cachedMirror.orderState(index)));
-        drawPair(graphics, x, y + 70, LABEL_ISSUED, selectedOrderIssuedText);
     }
 
     private void renderLogistics(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -376,7 +507,8 @@ public final class MillenaireCommandScreen extends Screen {
         int y = contentY + 12;
         graphics.drawString(font, safe(cachedMirror.logisticsName(index)), x, y, GOLD, true);
         drawPair(graphics, x, y + 22, LABEL_CARGO, selectedLogisticsCargoText);
-        drawPair(graphics, x, y + 38, LABEL_ROUTE, selectedLogisticsRouteText);
+        drawPair(graphics, x, y + 38, Component.translatable("gui.millenaire_armies.label.destination"),
+                selectedLogisticsRouteText);
         drawPair(graphics, x, y + 54, LABEL_ASSIGNED, safe(cachedMirror.logisticsAssignedArmy(index)));
         drawPair(graphics, x, y + 70, LABEL_STATE, logisticsText(cachedMirror.logisticsStatusCode(index)));
         drawPair(graphics, x, y + 86, LABEL_PROGRESS, selectedLogisticsProgressText);
@@ -447,6 +579,28 @@ public final class MillenaireCommandScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && cachedMirror.isReady() && tab == StrategicTab.RECRUITMENT
+                && mouseY >= contentY + 20 && mouseY < contentY + contentHeight - 2) {
+            int visible = Math.max(1, (contentHeight - 35) / ROW_HEIGHT);
+            if (mouseX >= contentX + 2 && mouseX < contentX + listWidth) {
+                int row = settlementScroll + ((int) mouseY - contentY - 20) / ROW_HEIGHT;
+                if (row >= 0 && row < cachedMirror.settlementCount()
+                        && row < settlementScroll + visible) {
+                    selectSettlement(row);
+                    return true;
+                }
+            } else if (mouseX >= contentX + listWidth + 2 && mouseX < contentX + contentWidth) {
+                int ordinal = recruitScroll + ((int) mouseY - contentY - 20) / ROW_HEIGHT;
+                if (ordinal >= 0 && ordinal < filteredRecruitCount()
+                        && ordinal < recruitScroll + visible) {
+                    selectedRecruitRow = filteredRecruitRow(ordinal);
+                    toggleRecruit(selectedRecruitRow);
+                    rosterColumn = 1;
+                    updateButtons();
+                    return true;
+                }
+            }
+        }
         if (button == 0 && cachedMirror.isReady() && insideList(mouseX, mouseY)) {
             int count = currentListCount();
             int visible = Math.max(1, (contentHeight - 6) / ROW_HEIGHT);
@@ -461,6 +615,18 @@ public final class MillenaireCommandScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (tab == StrategicTab.RECRUITMENT
+                && mouseY >= contentY + 2 && mouseY < contentY + contentHeight - 2) {
+            int direction = scrollY > 0.0D ? -1 : scrollY < 0.0D ? 1 : 0;
+            int visible = Math.max(1, (contentHeight - 35) / ROW_HEIGHT);
+            if (mouseX < contentX + listWidth) {
+                settlementScroll = clampScroll(
+                        settlementScroll + direction, cachedMirror.settlementCount(), visible);
+            } else {
+                recruitScroll = clampScroll(recruitScroll + direction, filteredRecruitCount(), visible);
+            }
+            return direction != 0;
+        }
         if (insideList(mouseX, mouseY)) {
             int count = currentListCount();
             int visible = Math.max(1, (contentHeight - 6) / ROW_HEIGHT);
@@ -500,6 +666,45 @@ public final class MillenaireCommandScreen extends Screen {
         }
         refreshSelectionText();
         updateButtons();
+    }
+
+    private void selectSettlement(int row) {
+        selectedSettlementMost = cachedMirror.settlementUuidMost(row);
+        selectedSettlementLeast = cachedMirror.settlementUuidLeast(row);
+        hasSelectedSettlement = true;
+        selectedRecruitRow = filteredRecruitCount() == 0 ? -1 : filteredRecruitRow(0);
+        selectedRecruitCount = 0;
+        recruitScroll = 0;
+        rosterColumn = 0;
+        updateButtons();
+    }
+
+    private void createArmy() {
+        boolean requested = hasSelectedSettlement && ArmyClientState.current().requestCreateArmy(
+                selectedSettlementMost, selectedSettlementLeast);
+        showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
+    }
+
+    private void retrySync() {
+        waitingTicks = 0;
+        ArmyClientState.current().requestFullSync();
+    }
+
+    private void recruitSelected() {
+        boolean requested = hasSelectedArmy && hasSelectedSettlement && selectedRecruitCount > 0
+                && ArmyClientState.current().requestRecruitUnits(
+                        selectedArmyId,
+                        selectedSettlementMost,
+                        selectedSettlementLeast,
+                        selectedRecruitCount,
+                        selectedRecruitPayload());
+        showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
+    }
+
+    private long[] selectedRecruitPayload() {
+        long[] result = new long[selectedRecruitCount * 2];
+        System.arraycopy(selectedRecruitBits, 0, result, 0, result.length);
+        return result;
     }
 
     private void issueOrder(int typeCode) {
@@ -542,7 +747,7 @@ public final class MillenaireCommandScreen extends Screen {
 
     private void refreshMirror(boolean force) {
         ArmyClientMirror mirror = ArmyClientState.current();
-        long revision = mirror.revision();
+        long revision = mirror.viewVersion();
         if (!force && mirror == cachedMirror && revision == cachedRevision) {
             return;
         }
@@ -554,6 +759,7 @@ public final class MillenaireCommandScreen extends Screen {
         logisticsCountText = integer(mirror.logisticsCount());
         validateSelection();
         refreshSelectionText();
+        refreshAcknowledgement();
         updateButtons();
     }
 
@@ -578,17 +784,11 @@ public final class MillenaireCommandScreen extends Screen {
             selectedArmySpeedText = percent(cachedMirror.armySpeedPercent(army));
         }
 
-        int order = findOrderIndex(selectedOrderId);
-        if (order >= 0) {
-            selectedOrderIssuedText = longInteger(cachedMirror.orderIssuedGameTime(order));
-        }
-
         int logistics = findLogisticsIndex(selectedLogisticsId);
         if (logistics >= 0) {
             selectedLogisticsCargoText = safe(cachedMirror.logisticsCargo(logistics))
                     + " ×" + cachedMirror.logisticsCargoCount(logistics);
-            selectedLogisticsRouteText = safe(cachedMirror.logisticsSource(logistics))
-                    + " → " + safe(cachedMirror.logisticsDestination(logistics));
+            selectedLogisticsRouteText = safe(cachedMirror.logisticsDestination(logistics));
             selectedLogisticsProgressText = percent(cachedMirror.logisticsProgressPercent(logistics));
             selectedLogisticsRiskText = percent(cachedMirror.logisticsRiskPercent(logistics));
             selectedLogisticsPriorityText = cachedMirror.logisticsHighPriority(logistics)
@@ -613,6 +813,18 @@ public final class MillenaireCommandScreen extends Screen {
         if (findLogisticsIndex(selectedLogisticsId) < 0) {
             selectedLogisticsId = cachedMirror.logisticsCount() == 0 ? -1 : cachedMirror.logisticsId(0);
         }
+        if (findSettlementIndex(selectedSettlementMost, selectedSettlementLeast) < 0) {
+            hasSelectedSettlement = cachedMirror.settlementCount() > 0;
+            if (hasSelectedSettlement) {
+                selectedSettlementMost = cachedMirror.settlementUuidMost(0);
+                selectedSettlementLeast = cachedMirror.settlementUuidLeast(0);
+            }
+        }
+        compactSelectedRecruits();
+        if (selectedRecruitRow < 0 || selectedRecruitRow >= cachedMirror.recruitCount()
+                || !recruitInSelectedSettlement(selectedRecruitRow)) {
+            selectedRecruitRow = filteredRecruitCount() == 0 ? -1 : filteredRecruitRow(0);
+        }
     }
 
     private void updateButtons() {
@@ -621,10 +833,15 @@ public final class MillenaireCommandScreen extends Screen {
         setState(moveButton, armyActions, tab == StrategicTab.ARMIES);
         setState(rallyButton, armyActions, tab == StrategicTab.ARMIES);
         setState(logisticsButton, armyActions, tab == StrategicTab.ARMIES);
-        boolean cancelVisible = tab == StrategicTab.ORDERS || tab == StrategicTab.LOGISTICS;
-        boolean cancelActive = tab == StrategicTab.ORDERS ? selectedOrderId >= 0 : selectedLogisticsId >= 0;
-        setState(cancelButton, cancelActive, cancelVisible);
-        setState(priorityButton, selectedLogisticsId >= 0, tab == StrategicTab.LOGISTICS);
+        // These intents do not exist server-side yet, so the UI does not present pretend actions.
+        setState(cancelButton, false, false);
+        setState(priorityButton, false, false);
+        setState(createArmyButton, cachedMirror.isReady() && hasSelectedSettlement,
+                tab == StrategicTab.RECRUITMENT);
+        setState(recruitButton,
+                cachedMirror.isReady() && hasSelectedSettlement && hasSelectedArmy && selectedRecruitCount > 0,
+                tab == StrategicTab.RECRUITMENT);
+        setState(retryButton, !cachedMirror.isReady(), !cachedMirror.isReady());
     }
 
     private static void setState(Button button, boolean active, boolean visible) {
@@ -640,12 +857,13 @@ public final class MillenaireCommandScreen extends Screen {
             case ARMIES -> cachedMirror.armyCount();
             case ORDERS -> cachedMirror.orderCount();
             case LOGISTICS -> cachedMirror.logisticsCount();
+            case RECRUITMENT -> cachedMirror.settlementCount();
             default -> 0;
         };
     }
 
     private boolean insideList(double x, double y) {
-        return tab != StrategicTab.OVERVIEW
+        return tab != StrategicTab.OVERVIEW && tab != StrategicTab.RECRUITMENT
                 && x >= contentX + 2 && x < contentX + listWidth
                 && y >= contentY + 2 && y < contentY + contentHeight - 2;
     }
@@ -664,8 +882,180 @@ public final class MillenaireCommandScreen extends Screen {
         return -1;
     }
 
+    private int findSettlementIndex(long most, long least) {
+        if (!hasSelectedSettlement) return -1;
+        for (int row = 0; row < cachedMirror.settlementCount(); row++) {
+            if (cachedMirror.settlementUuidMost(row) == most
+                    && cachedMirror.settlementUuidLeast(row) == least) {
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    private boolean settlementSelected(int row) {
+        return hasSelectedSettlement
+                && cachedMirror.settlementUuidMost(row) == selectedSettlementMost
+                && cachedMirror.settlementUuidLeast(row) == selectedSettlementLeast;
+    }
+
+    private boolean recruitInSelectedSettlement(int row) {
+        return hasSelectedSettlement
+                && cachedMirror.recruitVillageMost(row) == selectedSettlementMost
+                && cachedMirror.recruitVillageLeast(row) == selectedSettlementLeast;
+    }
+
+    private int filteredRecruitCount() {
+        int count = 0;
+        for (int row = 0; row < cachedMirror.recruitCount(); row++) {
+            if (recruitInSelectedSettlement(row)) count++;
+        }
+        return count;
+    }
+
+    private int filteredRecruitRow(int ordinal) {
+        for (int row = 0; row < cachedMirror.recruitCount(); row++) {
+            if (recruitInSelectedSettlement(row) && ordinal-- == 0) return row;
+        }
+        return -1;
+    }
+
+    private int filteredRecruitOrdinal(int requestedRow) {
+        int ordinal = 0;
+        for (int row = 0; row < cachedMirror.recruitCount(); row++) {
+            if (!recruitInSelectedSettlement(row)) continue;
+            if (row == requestedRow) return ordinal;
+            ordinal++;
+        }
+        return -1;
+    }
+
+    private boolean recruitSelected(int row) {
+        long most = cachedMirror.recruitUuidMost(row);
+        long least = cachedMirror.recruitUuidLeast(row);
+        for (int index = 0; index < selectedRecruitCount; index++) {
+            if (selectedRecruitBits[index * 2] == most && selectedRecruitBits[index * 2 + 1] == least) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void toggleRecruit(int row) {
+        long most = cachedMirror.recruitUuidMost(row);
+        long least = cachedMirror.recruitUuidLeast(row);
+        for (int index = 0; index < selectedRecruitCount; index++) {
+            if (selectedRecruitBits[index * 2] == most && selectedRecruitBits[index * 2 + 1] == least) {
+                int tail = selectedRecruitCount - index - 1;
+                if (tail > 0) {
+                    System.arraycopy(selectedRecruitBits, (index + 1) * 2,
+                            selectedRecruitBits, index * 2, tail * 2);
+                }
+                selectedRecruitCount--;
+                return;
+            }
+        }
+        if (selectedRecruitCount < ArmiesProtocol.MAX_RECRUITS_PER_INTENT) {
+            selectedRecruitBits[selectedRecruitCount * 2] = most;
+            selectedRecruitBits[selectedRecruitCount * 2 + 1] = least;
+            selectedRecruitCount++;
+        } else {
+            showFeedback(Component.translatable(
+                    "gui.millenaire_armies.recruit.selection_limit",
+                    ArmiesProtocol.MAX_RECRUITS_PER_INTENT));
+        }
+    }
+
+    private void compactSelectedRecruits() {
+        int write = 0;
+        for (int selected = 0; selected < selectedRecruitCount; selected++) {
+            long most = selectedRecruitBits[selected * 2];
+            long least = selectedRecruitBits[selected * 2 + 1];
+            boolean present = false;
+            for (int row = 0; row < cachedMirror.recruitCount(); row++) {
+                if (recruitInSelectedSettlement(row)
+                        && cachedMirror.recruitUuidMost(row) == most
+                        && cachedMirror.recruitUuidLeast(row) == least) {
+                    present = true;
+                    break;
+                }
+            }
+            if (present) {
+                selectedRecruitBits[write * 2] = most;
+                selectedRecruitBits[write * 2 + 1] = least;
+                write++;
+            }
+        }
+        selectedRecruitCount = write;
+    }
+
+    private String selectedArmyName() {
+        int row = findArmyIndex(selectedArmyId);
+        return row < 0 ? "" : cachedMirror.armyName(row);
+    }
+
+    private void refreshAcknowledgement() {
+        int actionId = cachedMirror.acknowledgedActionId();
+        if (actionId <= lastAcknowledgementId) return;
+        lastAcknowledgementId = actionId;
+        int result = cachedMirror.acknowledgedResult();
+        if (result == ArmiesProtocol.RESULT_ACCEPTED
+                && cachedMirror.acknowledgedAction() == ArmiesProtocol.ACTION_CREATE_ARMY
+                && cachedMirror.armyCount() > 0) {
+            selectedArmyId = cachedMirror.armyId(cachedMirror.armyCount() - 1);
+            hasSelectedArmy = true;
+        }
+        Component message = switch (result) {
+            case ArmiesProtocol.RESULT_ACCEPTED -> Component.translatable(
+                    "gui.millenaire_armies.result.accepted", cachedMirror.acknowledgedAffected());
+            case ArmiesProtocol.RESULT_STALE -> Component.translatable("gui.millenaire_armies.result.stale");
+            case ArmiesProtocol.RESULT_PERMISSION_DENIED -> Component.translatable(
+                    "gui.millenaire_armies.result.permission_denied");
+            case ArmiesProtocol.RESULT_NOT_FOUND -> Component.translatable("gui.millenaire_armies.result.not_found");
+            case ArmiesProtocol.RESULT_LIMIT_REACHED -> Component.translatable(
+                    "gui.millenaire_armies.result.limit_reached");
+            case ArmiesProtocol.RESULT_PARTIAL -> Component.translatable(
+                    "gui.millenaire_armies.result.partial", cachedMirror.acknowledgedAffected());
+            default -> Component.translatable("gui.millenaire_armies.result.invalid");
+        };
+        showFeedback(message);
+    }
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (tab == StrategicTab.RECRUITMENT
+                && (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT)
+                && !hasControlDown()) {
+            rosterColumn = keyCode == GLFW.GLFW_KEY_LEFT ? 0 : 1;
+            return true;
+        }
+        if (tab == StrategicTab.RECRUITMENT
+                && (keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_ENTER)
+                && rosterColumn == 1 && selectedRecruitRow >= 0) {
+            toggleRecruit(selectedRecruitRow);
+            updateButtons();
+            return true;
+        }
+        if (tab == StrategicTab.RECRUITMENT
+                && (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN)) {
+            int direction = keyCode == GLFW.GLFW_KEY_UP ? -1 : 1;
+            int visible = Math.max(1, (contentHeight - 35) / ROW_HEIGHT);
+            if (rosterColumn == 0 && cachedMirror.settlementCount() > 0) {
+                int current = Math.max(0, findSettlementIndex(selectedSettlementMost, selectedSettlementLeast));
+                int next = Math.max(0, Math.min(cachedMirror.settlementCount() - 1, current + direction));
+                selectSettlement(next);
+                settlementScroll = keepVisible(settlementScroll, next, visible);
+                return true;
+            }
+            int count = filteredRecruitCount();
+            if (rosterColumn == 1 && count > 0) {
+                int current = filteredRecruitOrdinal(selectedRecruitRow);
+                int next = Math.max(0, Math.min(count - 1, Math.max(0, current) + direction));
+                selectedRecruitRow = filteredRecruitRow(next);
+                recruitScroll = keepVisible(recruitScroll, next, visible);
+                return true;
+            }
+        }
         if (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT) {
             int direction = keyCode == GLFW.GLFW_KEY_LEFT ? -1 : 1;
             int next = Math.floorMod(tab.ordinal() + direction, StrategicTab.VALUES.length);
@@ -699,6 +1089,7 @@ public final class MillenaireCommandScreen extends Screen {
             case ARMIES -> findArmyIndex(selectedArmyId);
             case ORDERS -> findOrderIndex(selectedOrderId);
             case LOGISTICS -> findLogisticsIndex(selectedLogisticsId);
+            case RECRUITMENT -> findSettlementIndex(selectedSettlementMost, selectedSettlementLeast);
             default -> -1;
         };
     }
@@ -756,7 +1147,9 @@ public final class MillenaireCommandScreen extends Screen {
     }
 
     private static String safe(String value) {
-        return value == null ? "" : value;
+        return value == null || value.isBlank()
+                ? I18n.get("gui.millenaire_armies.state.unavailable")
+                : value;
     }
 
     private static String integer(int value) {
@@ -781,6 +1174,11 @@ public final class MillenaireCommandScreen extends Screen {
 
     private static int clampScroll(int value, int count, int visible) {
         return Math.max(0, Math.min(value, Math.max(0, count - visible)));
+    }
+
+    private static int keepVisible(int scroll, int row, int visible) {
+        if (row < scroll) return row;
+        return row >= scroll + visible ? row - visible + 1 : scroll;
     }
 
     private static void outline(GuiGraphics graphics, int x, int y, int width, int height, int color) {

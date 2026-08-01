@@ -7,7 +7,9 @@ import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 public final class PackedUnitExecutionState {
     public static final byte PENDING = 0;
     public static final byte RUNNING = 1;
-    public static final byte TERMINAL = 2;
+    public static final byte ARRIVED = 2;
+    public static final byte BLOCKED = 3;
+    public static final byte TERMINAL = ARRIVED;
 
     private static final int MIN_GROWTH = 16;
 
@@ -48,16 +50,36 @@ public final class PackedUnitExecutionState {
     }
 
     public void markTerminal(int unitHandle, int armyHandle, long revision) {
-        put(unitHandle, armyHandle, revision, TERMINAL);
+        markArrived(unitHandle, armyHandle, revision);
+    }
+
+    public void markArrived(int unitHandle, int armyHandle, long revision) {
+        put(unitHandle, armyHandle, revision, ARRIVED);
+    }
+
+    public void markBlocked(int unitHandle, int armyHandle, long revision) {
+        put(unitHandle, armyHandle, revision, BLOCKED);
     }
 
     /** Completes only the task that still owns the exact current revision. */
     public boolean markTerminalIfCurrent(int unitHandle, int armyHandle, long revision) {
+        return markIfCurrent(unitHandle, armyHandle, revision, ARRIVED);
+    }
+
+    public boolean markArrivedIfCurrent(int unitHandle, int armyHandle, long revision) {
+        return markIfCurrent(unitHandle, armyHandle, revision, ARRIVED);
+    }
+
+    public boolean markBlockedIfCurrent(int unitHandle, int armyHandle, long revision) {
+        return markIfCurrent(unitHandle, armyHandle, revision, BLOCKED);
+    }
+
+    private boolean markIfCurrent(int unitHandle, int armyHandle, long revision, byte status) {
         int row = indexOf(unitHandle);
         if (row < 0 || armyHandles[row] != armyHandle || revisions[row] != revision) {
             return false;
         }
-        statuses[row] = TERMINAL;
+        statuses[row] = status;
         return true;
     }
 

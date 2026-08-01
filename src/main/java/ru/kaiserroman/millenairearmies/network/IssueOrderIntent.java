@@ -11,6 +11,7 @@ public record IssueOrderIntent(
         int actionId,
         int armyHandle,
         byte orderType,
+        ResourceLocation targetDimension,
         long primaryPosition,
         long secondaryPosition,
         int subjectEntityId,
@@ -29,6 +30,9 @@ public record IssueOrderIntent(
         if (!ArmiesProtocol.validStrategicOrder(orderType)) {
             throw new IllegalArgumentException("Unknown army order: " + orderType);
         }
+        if (targetDimension == null) {
+            throw new IllegalArgumentException("Target dimension must not be null");
+        }
         if (expectedRevision < 0) {
             throw new IllegalArgumentException("Expected revision must be non-negative");
         }
@@ -41,6 +45,7 @@ public record IssueOrderIntent(
         BoundedCodecs.writeCount(buffer, payload.actionId, Integer.MAX_VALUE, "actionId");
         buffer.writeVarInt(payload.armyHandle);
         buffer.writeByte(payload.orderType);
+        BoundedCodecs.writeUtf8(buffer, payload.targetDimension.toString(), 128, "targetDimension");
         buffer.writeByte(payload.flags);
         buffer.writeLong(payload.primaryPosition);
         if ((payload.flags & ArmiesProtocol.ORDER_FLAG_SECONDARY_POSITION) != 0) {
@@ -56,6 +61,11 @@ public record IssueOrderIntent(
         int actionId = BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "actionId");
         int armyHandle = buffer.readVarInt();
         byte orderType = buffer.readByte();
+        ResourceLocation targetDimension = ResourceLocation.tryParse(
+                BoundedCodecs.readUtf8(buffer, 128, "targetDimension"));
+        if (targetDimension == null) {
+            throw new IllegalArgumentException("Invalid target dimension");
+        }
         byte flags = buffer.readByte();
         long primaryPosition = buffer.readLong();
         long secondaryPosition = (flags & ArmiesProtocol.ORDER_FLAG_SECONDARY_POSITION) != 0
@@ -69,6 +79,7 @@ public record IssueOrderIntent(
                 actionId,
                 armyHandle,
                 orderType,
+                targetDimension,
                 primaryPosition,
                 secondaryPosition,
                 subjectEntityId,

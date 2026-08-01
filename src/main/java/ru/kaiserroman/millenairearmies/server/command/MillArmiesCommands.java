@@ -15,6 +15,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.network.ArmiesNetwork;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
@@ -25,6 +26,8 @@ public final class MillArmiesCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, ArmyCommandService service) {
         dispatcher.register(literal("millarmies")
+                .executes(MillArmiesCommands::openScreen)
+                .then(literal("command").executes(MillArmiesCommands::openScreen))
                 .then(literal("status").executes(context -> status(context, service)))
                 .then(literal("list").executes(context -> list(context, service)))
                 .then(literal("create")
@@ -50,6 +53,16 @@ public final class MillArmiesCommands {
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
                                                         context, service, StrategicArmyOrder.LOGISTICS)))))));
+    }
+
+    private static int openScreen(CommandContext<CommandSourceStack> context) {
+        ServerPlayer player = context.getSource().getPlayer();
+        if (player == null) {
+            context.getSource().sendFailure(Component.literal("This command requires a player"));
+            return 0;
+        }
+        ArmiesNetwork.openScreen(player);
+        return 1;
     }
 
     private static int status(CommandContext<CommandSourceStack> context, ArmyCommandService service) {
