@@ -29,6 +29,14 @@ public final class ArmiesConfig {
     public static final int ACTIVE_STRATEGIC_WORKER_COUNT = 0;
     public static final int MAX_FACTIONS = integer("maxFactions", 256, 1, 65_536);
     public static final int MAX_ARMIES = integer("maxArmies", 1_024, 1, 1_000_000);
+    public static final int MAX_UNITS_PER_ARMY =
+            integer("maxUnitsPerArmy", 128, 1, 4_096);
+    public static final int RECRUITMENT_VILLAGE_RADIUS =
+            integer("recruitmentVillageRadius", 96, 16, 1_024);
+    public static final int ARMY_FORMATION_EMERALD_COST =
+            integer("armyFormationEmeraldCost", 16, 0, 1_000_000);
+    public static final int UNIT_RECRUITMENT_EMERALD_COST =
+            integer("unitRecruitmentEmeraldCost", 4, 0, 1_000_000);
     public static final int MAX_PENDING_ORDERS = integer("maxPendingOrders", 16_384, 1, 4_000_000);
     public static final int MAX_LOGISTICS_REQUESTS =
             integer("maxLogisticsRequests", 32_768, 1, 4_000_000);

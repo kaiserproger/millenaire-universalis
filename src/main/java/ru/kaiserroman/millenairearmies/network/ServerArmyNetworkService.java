@@ -1,9 +1,11 @@
 package ru.kaiserroman.millenairearmies.network;
 
 import java.nio.charset.StandardCharsets;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedFactionState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
@@ -11,6 +13,7 @@ import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
+import ru.kaiserroman.millenairearmies.server.command.MillArmiesRecruitmentCommands;
 
 /**
  * Minimal authoritative networking vertical slice. It projects only armies controlled by the
@@ -27,19 +30,29 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     private final PackedUnitMembership.UuidBits unitUuid;
     private final int[] visibleFactions = new int[ArmiesProtocol.MAX_FACTIONS_PER_SNAPSHOT];
     private FactionProjectionService factionProjection;
+    private final MillenaireRecruitmentService recruitment;
     private int visibleFactionCount;
 
     public ServerArmyNetworkService(ArmySavedData data, ArmyCommandService commands) {
-        this(data, commands, null);
+        this(data, commands, null, null);
     }
 
     public ServerArmyNetworkService(
             ArmySavedData data,
             ArmyCommandService commands,
             FactionProjectionService factionProjection) {
+        this(data, commands, factionProjection, null);
+    }
+
+    public ServerArmyNetworkService(
+            ArmySavedData data,
+            ArmyCommandService commands,
+            FactionProjectionService factionProjection,
+            MillenaireRecruitmentService recruitment) {
         this.data = data;
         this.commands = commands;
         this.factionProjection = factionProjection;
+        this.recruitment = recruitment;
         this.unitCursor = data.ecs().newUnitCursor();
         this.relationCursor = data.factions().newCursor();
         this.logisticsCursor = data.logistics().newCursor();
@@ -90,14 +103,18 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
             return;
         }
-        ArmyCommandAuthority authority = authority(player);
-        long result = commands.createArmy(
-                authority,
-                intent.factionId(),
-                intent.homeVillagePosition(),
-                player.serverLevel().dimension().location());
+        if (recruitment == null) {
+            return;
+        }
+        // The client-provided faction/position are presentation hints only. Ownership, faction and
+        // home settlement are resolved from the authenticated player's current server position.
+        long result = recruitment.formArmy(
+                authority(player), player.serverLevel(), player.blockPosition(), intent.desiredUnits());
         if (result >= 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+        } else {
+            player.sendSystemMessage(Component.literal(
+                    MillArmiesRecruitmentCommands.failureMessage(result)));
         }
     }
 

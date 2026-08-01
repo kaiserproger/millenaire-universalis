@@ -93,3 +93,12 @@ tasks.register('runArmyPersistenceSelfTest', JavaExec) {
     jvmArgs '-ea'
     dependsOn classes
 }
+
+tasks.register('runRecruitmentGameplaySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks controlled-settlement recruitment, capacity, persistence and idempotent disband.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.RecruitmentGameplaySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}

@@ -96,7 +96,10 @@ public final class MillenaireEntityBridge {
 
     public MillVillager findLoaded(long uuidMost, long uuidLeast) {
         int slot = indexOfUuid(uuidMost, uuidLeast);
-        return slot < 0 ? null : villagers[slot];
+        MillVillager villager = slot < 0 ? null : villagers[slot];
+        return villager == null || villager.isRemoved() || villager.getUUID() == null
+                ? null
+                : villager;
     }
 
     public int size() {
@@ -120,7 +123,7 @@ public final class MillenaireEntityBridge {
     private static Village resolve(
             MillVillager villager, ServerLevel eventLevel, MillenaireVillageIndex index) {
         VillageId villageId = villager.getVillageId();
-        if (villageId == null) {
+        if (villageId == null || villageId.uuid() == null) {
             return null;
         }
         Village village = index.find(villageId);

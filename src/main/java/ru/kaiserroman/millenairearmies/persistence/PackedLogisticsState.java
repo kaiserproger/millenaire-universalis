@@ -146,6 +146,39 @@ public final class PackedLogisticsState {
     public long createdGameTimeAt(int row) { checkRow(row); return createdGameTimes[row]; }
     public byte statusCodeAt(int row) { checkRow(row); return statusCodes[row]; }
 
+    /** Swap-removes a known row; used when its owning army is permanently disbanded. */
+    public void removeAt(int row) {
+        checkRow(row);
+        int last = --size;
+        if (row != last) {
+            requestIds[row] = requestIds[last];
+            factionIds[row] = factionIds[last];
+            requesterArmyHandles[row] = requesterArmyHandles[last];
+            itemKeys[row] = itemKeys[last];
+            requiredAmounts[row] = requiredAmounts[last];
+            fulfilledAmounts[row] = fulfilledAmounts[last];
+            dimensionIds[row] = dimensionIds[last];
+            destinations[row] = destinations[last];
+            createdGameTimes[row] = createdGameTimes[last];
+            priorities[row] = priorities[last];
+            statusCodes[row] = statusCodes[last];
+            revisions[row] = revisions[last];
+        }
+        requestIds[last] = 0L;
+        factionIds[last] = 0;
+        requesterArmyHandles[last] = PackedArmyEcs.NO_ARMY;
+        itemKeys[last] = 0;
+        requiredAmounts[last] = 0;
+        fulfilledAmounts[last] = 0;
+        dimensionIds[last] = 0;
+        destinations[last] = 0L;
+        createdGameTimes[last] = 0L;
+        priorities[last] = 0;
+        statusCodes[last] = 0;
+        revisions[last] = 0L;
+        structuralVersion++;
+    }
+
     public Cursor newCursor() {
         return new Cursor(this);
     }

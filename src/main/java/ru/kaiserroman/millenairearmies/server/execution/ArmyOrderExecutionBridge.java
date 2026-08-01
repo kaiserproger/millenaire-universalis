@@ -163,6 +163,42 @@ public final class ArmyOrderExecutionBridge {
         entityJoined(villager);
     }
 
+    /** Immediately relinquishes only a task owned by this bridge before persistent release. */
+    public void releaseUnit(int unitHandle, long uuidMost, long uuidLeast) {
+        if (server == null) {
+            return;
+        }
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Army unit release must run on the server thread");
+        }
+        try {
+            MillVillager villager = entityBridge.findLoaded(uuidMost, uuidLeast);
+            if (villager == null || villager.isRemoved()) {
+                return;
+            }
+            GoalScheduler scheduler = villager.getGoalScheduler();
+            if (scheduler == null) {
+                return;
+            }
+            VillagerTask current = scheduler.getCurrentTask();
+            if (!(current instanceof StrategicMoveTask task) || task.unitHandle() != unitHandle) {
+                return;
+            }
+            task.cancel();
+            GoalContext context = villager.buildGoalContext();
+            if (context != null) {
+                scheduler.forceStop(context);
+            }
+        } catch (RuntimeException failure) {
+            LOGGER.warn(
+                    "Could not immediately relinquish Millenaire task for released unit {}",
+                    Integer.toUnsignedString(unitHandle),
+                    failure);
+        } finally {
+            unitStates.remove(unitHandle);
+        }
+    }
+
     public boolean stop(MinecraftServer stoppingServer) {
         if (server != stoppingServer) {
             return false;

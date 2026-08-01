@@ -126,6 +126,8 @@ public final class ArmyLifecycleService {
                 startingServer,
                 savedData.ecs(),
                 savedData.memberships(),
+                savedData.commands(),
+                savedData.logistics(),
                 savedData::markArmyChanged);
         recruitmentService.installFactionPolicy(factionProjection);
         if (OrderExecutionPolicy.shouldStart(ArmiesConfig.ORDER_EXECUTION_ENABLED)) {
@@ -138,6 +140,7 @@ public final class ArmyLifecycleService {
                     entityBridge,
                     commandService,
                     savedData::markArmyChanged);
+            recruitmentService.installReleaseListener(orderExecution::releaseUnit);
         }
         diplomacy.start(startingServer, savedData);
         unitRoleService = new UnitRoleService(
@@ -145,7 +148,8 @@ public final class ArmyLifecycleService {
                 entityBridge,
                 UnitDescriptorCatalog.INSTANCE,
                 savedData.memberships().size());
-        networkService = new ServerArmyNetworkService(savedData, commandService, factionProjection);
+        networkService = new ServerArmyNetworkService(
+                savedData, commandService, factionProjection, recruitmentService);
         ServerIntentRouter.install(networkService);
         phaseStart = System.nanoTime();
         int entityChanges = entityBridge.reconcile(villageIndex);
