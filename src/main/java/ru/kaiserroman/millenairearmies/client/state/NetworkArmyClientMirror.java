@@ -8,11 +8,15 @@ import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.network.PacketDistributor;
 import ru.kaiserroman.millenairearmies.client.ArmyClientMirror;
 import ru.kaiserroman.millenairearmies.client.ArmyClientState;
+import ru.kaiserroman.millenairearmies.client.ArmyTargetSelection;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
+import ru.kaiserroman.millenairearmies.network.ArmyRosterSnapshotPayload;
+import ru.kaiserroman.millenairearmies.network.CreateArmyIntent;
 import ru.kaiserroman.millenairearmies.network.FactionMetadataPayload;
 import ru.kaiserroman.millenairearmies.network.IssueOrderIntent;
 import ru.kaiserroman.millenairearmies.network.RequestStateIntent;
+import ru.kaiserroman.millenairearmies.network.RecruitUnitsIntent;
 import ru.kaiserroman.millenairearmies.presentation.client.ClientPresentationState;
 import ru.kaiserroman.millenairearmies.presentation.client.ClientUnitPresentation;
 
@@ -23,8 +27,6 @@ import ru.kaiserroman.millenairearmies.presentation.client.ClientUnitPresentatio
 public final class NetworkArmyClientMirror
         implements ArmyClientMirror, ClientStateListener, FactionMetadataListener {
     private static final String EMPTY = "";
-    private static final String READY = "Synced";
-    private static final String STALE = "State revision gap; resync required";
     private static final ResourceLocation PRESENTATION_ROLE_LEVY = id("levy");
     private static final ResourceLocation PRESENTATION_RANK_NONE = id("none");
     private static final ResourceLocation PRESENTATION_BANNER_DEFAULT = id("default");
@@ -35,6 +37,7 @@ public final class NetworkArmyClientMirror
 
     private final ClientArmyState state = ClientArmyState.INSTANCE;
     private final ClientFactionMetadataState metadata = ClientFactionMetadataState.INSTANCE;
+    private final ClientArmyRosterState roster = ClientArmyRosterState.INSTANCE;
     private final ClientUnitPresentation[] unitPresentations =
             new ClientUnitPresentation[PRESENTATION_ORDER.length];
     private String[] factionNames = new String[0];
@@ -59,11 +62,13 @@ public final class NetworkArmyClientMirror
     private int[] factionInfluences = new int[0];
     private int[] factionArmyUnitCounts = new int[0];
     private int actionSequence;
+    private long viewVersion;
 
     private NetworkArmyClientMirror() {}
 
     @Override
     public void stateChanged(ClientArmyState changed) {
+        viewVersion++;
         rebuildPresentation();
         // Install the transport-capable mirror before the first snapshot.  The screen's added()
         // hook must be able to send its initial request while the state is still uninitialized.
@@ -72,6 +77,13 @@ public final class NetworkArmyClientMirror
 
     @Override
     public void metadataChanged(ClientFactionMetadataState changed) {
+        viewVersion++;
+        rebuildPresentation();
+        ArmyClientState.install(this);
+    }
+
+    public void rosterChanged() {
+        viewVersion++;
         rebuildPresentation();
         ArmyClientState.install(this);
     }
@@ -82,13 +94,20 @@ public final class NetworkArmyClientMirror
     }
 
     @Override
+    public long viewVersion() {
+        return viewVersion;
+    }
+
+    @Override
     public boolean isReady() {
         return state.initialized() && !state.requiresResync();
     }
 
     @Override
     public String statusText() {
-        return state.requiresResync() ? STALE : state.initialized() ? READY : EMPTY;
+        return I18n.get(state.requiresResync()
+                ? "gui.millenaire_armies.state.stale"
+                : state.initialized() ? "gui.millenaire_armies.state.ready" : "gui.millenaire_armies.state.loading");
     }
 
     @Override
@@ -295,7 +314,7 @@ public final class NetworkArmyClientMirror
 
     @Override
     public String orderState(int index) {
-        return "active";
+        return I18n.get(executionTranslationKey(orders().byteValue(index, 1)));
     }
 
     @Override
@@ -357,6 +376,96 @@ public final class NetworkArmyClientMirror
         return logistics().byteValue(index, 1) >= 4;
     }
 
+    @Override public int settlementCount() { return roster.settlementCount(); }
+    @Override public long settlementUuidMost(int index) {
+        return roster.settlementLong(index, ArmyRosterSnapshotPayload.SETTLEMENT_UUID_MOST);
+    }
+    @Override public long settlementUuidLeast(int index) {
+        return roster.settlementLong(index, ArmyRosterSnapshotPayload.SETTLEMENT_UUID_LEAST);
+    }
+    @Override public long settlementPosition(int index) {
+        return roster.settlementLong(index, ArmyRosterSnapshotPayload.SETTLEMENT_POSITION);
+    }
+    @Override public int settlementFactionId(int index) {
+        return roster.settlementInt(index, ArmyRosterSnapshotPayload.SETTLEMENT_FACTION);
+    }
+    @Override public int settlementPopulation(int index) {
+        return roster.settlementInt(index, ArmyRosterSnapshotPayload.SETTLEMENT_POPULATION);
+    }
+    @Override public int settlementAvailableRecruitCount(int index) {
+        return roster.settlementInt(index, ArmyRosterSnapshotPayload.SETTLEMENT_AVAILABLE);
+    }
+    @Override public String settlementName(int index) {
+        return roster.settlementString(index, ArmyRosterSnapshotPayload.SETTLEMENT_NAME);
+    }
+    @Override public String settlementCulture(int index) {
+        return roster.settlementString(index, ArmyRosterSnapshotPayload.SETTLEMENT_CULTURE);
+    }
+    @Override public int recruitCount() { return roster.recruitCount(); }
+    @Override public long recruitUuidMost(int index) {
+        return roster.recruitLong(index, ArmyRosterSnapshotPayload.RECRUIT_UUID_MOST);
+    }
+    @Override public long recruitUuidLeast(int index) {
+        return roster.recruitLong(index, ArmyRosterSnapshotPayload.RECRUIT_UUID_LEAST);
+    }
+    @Override public long recruitVillageMost(int index) {
+        return roster.recruitLong(index, ArmyRosterSnapshotPayload.RECRUIT_VILLAGE_MOST);
+    }
+    @Override public long recruitVillageLeast(int index) {
+        return roster.recruitLong(index, ArmyRosterSnapshotPayload.RECRUIT_VILLAGE_LEAST);
+    }
+    @Override public int recruitStrength(int index) {
+        return roster.recruitInt(index, ArmyRosterSnapshotPayload.RECRUIT_STRENGTH);
+    }
+    @Override public String recruitName(int index) {
+        return roster.recruitString(index, ArmyRosterSnapshotPayload.RECRUIT_NAME);
+    }
+    @Override public String recruitRole(int index) {
+        return roster.recruitString(index, ArmyRosterSnapshotPayload.RECRUIT_ROLE);
+    }
+    @Override public int acknowledgedActionId() { return roster.acknowledgementActionId(); }
+    @Override public byte acknowledgedAction() { return roster.acknowledgementAction(); }
+    @Override public int acknowledgedResult() { return roster.acknowledgementResult(); }
+    @Override public int acknowledgedAffected() { return roster.acknowledgementAffected(); }
+
+    @Override
+    public boolean requestCreateArmy(long villageUuidMost, long villageUuidLeast) {
+        if (!isReady() || Minecraft.getInstance().getConnection() == null) {
+            return false;
+        }
+        for (int row = 0; row < roster.settlementCount(); row++) {
+            if (settlementUuidMost(row) == villageUuidMost && settlementUuidLeast(row) == villageUuidLeast) {
+                PacketDistributor.sendToServer(new CreateArmyIntent(
+                        nextActionId(),
+                        settlementFactionId(row),
+                        settlementPosition(row),
+                        0,
+                        1,
+                        state.revision(),
+                        (byte) 0));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean requestRecruitUnits(
+            int armyHandleBits,
+            long villageUuidMost,
+            long villageUuidLeast,
+            int count,
+            long[] villagerUuidBits) {
+        if (!isReady() || armies().findRow(armyHandleBits) < 0
+                || Minecraft.getInstance().getConnection() == null) {
+            return false;
+        }
+        PacketDistributor.sendToServer(new RecruitUnitsIntent(
+                nextActionId(), armyHandleBits, villageUuidMost, villageUuidLeast,
+                state.revision(), count, villagerUuidBits));
+        return true;
+    }
+
     @Override
     public boolean requestIssueOrder(int armyHandleBits, int orderTypeCode) {
         if (!isReady() || !ArmiesProtocol.validStrategicOrder((byte) orderTypeCode)
@@ -364,15 +473,18 @@ public final class NetworkArmyClientMirror
             return false;
         }
         long target = 0L;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return false;
+        }
+        int actionId = nextActionId();
         if (orderTypeCode != ArmiesProtocol.ORDER_HOLD) {
-            HitResult hit = Minecraft.getInstance().hitResult;
-            if (!(hit instanceof BlockHitResult blockHit) || hit.getType() != HitResult.Type.BLOCK) {
-                return false;
-            }
-            target = blockHit.getBlockPos().asLong();
+            return ArmyTargetSelection.begin(
+                    armyHandleBits, (byte) orderTypeCode, state.revision(), actionId);
         }
         PacketDistributor.sendToServer(new IssueOrderIntent(
-                nextActionId(), armyHandleBits, (byte) orderTypeCode, target, 0L, -1,
+                actionId, armyHandleBits, (byte) orderTypeCode,
+                minecraft.level.dimension().location(), target, 0L, -1,
                 state.revision(), (byte) 0));
         return true;
     }
@@ -465,8 +577,10 @@ public final class NetworkArmyClientMirror
             int armyRow = armies.findRow(army);
             orderArmyNames[row] = armyRow < 0 ? "Army " + Integer.toUnsignedString(army) : armyNames[armyRow];
             orderTargets[row] = position(orders.longValue(row, 1));
-            orderSummaries[row] = I18n.get("gui.millenaire_armies.summary.order",
-                    I18n.get(orderTranslationKey(orders.byteValue(row, 0))), orderTargets[row]);
+            orderSummaries[row] = I18n.get("gui.millenaire_armies.summary.order_status",
+                    I18n.get(orderTranslationKey(orders.byteValue(row, 0))),
+                    I18n.get(executionTranslationKey(orders.byteValue(row, 1))),
+                    orderTargets[row]);
         }
 
         PackedMirrorTable logistics = logistics();
@@ -558,6 +672,16 @@ public final class NetworkArmyClientMirror
             case ArmiesProtocol.ORDER_RALLY -> "gui.millenaire_armies.order.rally";
             case ArmiesProtocol.ORDER_LOGISTICS -> "gui.millenaire_armies.order.logistics";
             default -> "gui.millenaire_armies.order.unknown";
+        };
+    }
+
+    private static String executionTranslationKey(byte code) {
+        return switch (code) {
+            case ArmiesProtocol.EXECUTION_ACCEPTED -> "gui.millenaire_armies.execution.accepted";
+            case ArmiesProtocol.EXECUTION_EXECUTING -> "gui.millenaire_armies.execution.executing";
+            case ArmiesProtocol.EXECUTION_ARRIVED -> "gui.millenaire_armies.execution.arrived";
+            case ArmiesProtocol.EXECUTION_BLOCKED -> "gui.millenaire_armies.execution.blocked";
+            default -> "gui.millenaire_armies.execution.blocked";
         };
     }
 

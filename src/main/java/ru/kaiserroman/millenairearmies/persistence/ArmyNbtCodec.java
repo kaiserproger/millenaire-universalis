@@ -352,6 +352,9 @@ final class ArmyNbtCodec {
 
         PackedArmyEcs ecs = new PackedArmyEcs(armyCount, unitCount);
         PackedUnitMembership memberships = new PackedUnitMembership();
+        if (memberships.usesPrimitiveIndex()) {
+            memberships.reserve(unitCount);
+        }
         int[] restoredArmyHandles = new int[armyCount];
         for (int armyRow = 0; armyRow < armyCount; armyRow++) {
             restoredArmyHandles[armyRow] = ecs.createArmy(

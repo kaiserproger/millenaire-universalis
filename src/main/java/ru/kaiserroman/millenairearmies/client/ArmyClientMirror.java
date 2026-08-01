@@ -18,6 +18,9 @@ public interface ArmyClientMirror {
         return 0L;
     }
 
+    /** Monotonic client presentation version; may advance for same-revision acknowledgements. */
+    default long viewVersion() { return revision(); }
+
     default boolean isReady() {
         return false;
     }
@@ -238,11 +241,48 @@ public interface ArmyClientMirror {
         return false;
     }
 
+    default int settlementCount() { return 0; }
+    default long settlementUuidMost(int index) { return 0L; }
+    default long settlementUuidLeast(int index) { return 0L; }
+    default long settlementPosition(int index) { return 0L; }
+    default int settlementFactionId(int index) { return -1; }
+    default int settlementPopulation(int index) { return 0; }
+    default int settlementAvailableRecruitCount(int index) { return 0; }
+    default String settlementName(int index) { return ""; }
+    default String settlementCulture(int index) { return ""; }
+
+    default int recruitCount() { return 0; }
+    default long recruitUuidMost(int index) { return 0L; }
+    default long recruitUuidLeast(int index) { return 0L; }
+    default long recruitVillageMost(int index) { return 0L; }
+    default long recruitVillageLeast(int index) { return 0L; }
+    default int recruitStrength(int index) { return 0; }
+    default String recruitName(int index) { return ""; }
+    default String recruitRole(int index) { return ""; }
+
+    default int acknowledgedActionId() { return 0; }
+    default byte acknowledgedAction() { return 0; }
+    default int acknowledgedResult() { return 0; }
+    default int acknowledgedAffected() { return 0; }
+
     /**
      * Begins an authoritative order request. For target-requiring orders the adapter may enter its
      * own target-selection flow before sending a packet; the screen never invents a target.
      */
     default boolean requestIssueOrder(int armyHandleBits, int orderTypeCode) {
+        return false;
+    }
+
+    default boolean requestCreateArmy(long villageUuidMost, long villageUuidLeast) {
+        return false;
+    }
+
+    default boolean requestRecruitUnits(
+            int armyHandleBits,
+            long villageUuidMost,
+            long villageUuidLeast,
+            int count,
+            long[] villagerUuidBits) {
         return false;
     }
 

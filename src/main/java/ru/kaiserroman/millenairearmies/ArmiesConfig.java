@@ -21,6 +21,9 @@ public final class ArmiesConfig {
      * owning-goal scheduling hook and orders persist an explicit target dimension.
      */
     public static final boolean ORDER_EXECUTION_ENABLED = bool("orderExecutionEnabled", false);
+    /** Experimental primitive membership indices; disabled until server-level A/B is accepted. */
+    public static final boolean MEMBERSHIP_PRIMITIVE_INDEX =
+            bool("membershipPrimitiveIndex", false);
     /**
      * Requested only by the isolated stress harness. No worker kernel is currently production-safe,
      * so runtime active count remains zero and non-zero requests are reported NOT_APPLICABLE.

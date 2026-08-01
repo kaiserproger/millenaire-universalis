@@ -113,6 +113,28 @@ public final class ArmyCommandService {
         if (!authority.operator()) {
             return PERMISSION_DENIED;
         }
+        return createArmyInternal(authority, factionId, packedPosition);
+    }
+
+    /**
+     * Creates a player-controlled army after an integration service has already validated the
+     * selected settlement and faction. The authenticated authority remains the controller source.
+     */
+    public long createControlledArmy(
+            ArmyCommandAuthority authority, int factionId, long packedPosition) {
+        if (server == null) {
+            return NOT_RUNNING;
+        }
+        requireServerThread();
+        Objects.requireNonNull(authority, "authority");
+        if (!authority.operator() && !authority.hasIdentity()) {
+            return PERMISSION_DENIED;
+        }
+        return createArmyInternal(authority, factionId, packedPosition);
+    }
+
+    private long createArmyInternal(
+            ArmyCommandAuthority authority, int factionId, long packedPosition) {
         if (!factionValidator.isValid(factionId)) {
             return INVALID_FACTION;
         }
@@ -127,8 +149,7 @@ public final class ArmyCommandService {
                 authority.uuidLeast(),
                 authority.hasIdentity());
         dirtyMarker.markDirty();
-        orderCommitListener.committed(
-                handle, StrategicArmyOrder.HOLD.code(), packedPosition);
+        orderCommitListener.committed(handle, StrategicArmyOrder.HOLD.code(), packedPosition);
         return Integer.toUnsignedLong(handle);
     }
 

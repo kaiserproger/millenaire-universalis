@@ -49,6 +49,31 @@ tasks.register('runNetworkStateSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runArmyUiStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks roster replacement, same-revision acknowledgements and stale rejection.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.client.ui.ArmyUiStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('validateArmyUiResources', JavaExec) {
+    group = 'verification'
+    description = 'Checks paired locales, literal UI keys, blank values and unfinished resource text.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.client.ui.ArmyUiResourceSelfTest'
+    args file('src/main/resources/assets/millenaire_armies/lang/en_us.json').absolutePath,
+            file('src/main/resources/assets/millenaire_armies/lang/ru_ru.json').absolutePath,
+            file('src/main/java').absolutePath
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.named('check') {
+    dependsOn 'runArmyUiStateSelfTest', 'validateArmyUiResources'
+}
+
 tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs primitive army order revision and execution acknowledgement self-tests.'
@@ -83,4 +108,54 @@ tasks.register('runArmyPersistenceSelfTest', JavaExec) {
     mainClass = 'ru.kaiserroman.millenairearmies.persistence.ArmyPersistenceSelfTest'
     jvmArgs '-ea'
     dependsOn classes
+}
+
+tasks.register('runRecruitmentMembershipSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks recruitment membership binding, reassignment and release semantics.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.RecruitmentMembershipSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runArmyEcsSoaBenchmark', JavaExec) {
+    group = 'verification'
+    description = 'Measures 1k-army/10k-unit retained heap, cursor allocation, and UUID lookup cost.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.ecs.ArmyEcsSoaBenchmark'
+    jvmArgs '-ea'
+    dependsOn testClasses
+}
+
+tasks.register('runPackedUnitMembershipIndexSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Differentially checks primitive membership indices against the linear fallback.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PackedUnitMembershipIndexSelfTest'
+    jvmArgs '-ea'
+    dependsOn testClasses
+}
+
+tasks.register('runArmyPersistenceIndexedSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks NBT round-trip with the experimental membership index enabled.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.ArmyPersistenceSelfTest'
+    jvmArgs '-ea', '-Dmillenairearmies.membershipPrimitiveIndex=true'
+    dependsOn classes
+}
+
+tasks.register('runRecruitmentMembershipIndexedSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks recruitment membership semantics with the primitive index enabled.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.RecruitmentMembershipSelfTest'
+    jvmArgs '-ea', '-Dmillenairearmies.membershipPrimitiveIndex=true'
+    dependsOn classes
+}
+
+tasks.named('test', Test) {
+    // Verification uses deterministic JavaExec mains rather than a JUnit engine.
+    failOnNoDiscoveredTests = false
 }

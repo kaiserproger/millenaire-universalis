@@ -91,6 +91,21 @@ public final class MillenaireEntityBridge {
         return null;
     }
 
+    /** Cold explicit-UI traversal over already loaded entities; never loads a chunk or record. */
+    public int visitLoaded(LoadedVillagerVisitor visitor) {
+        int visited = 0;
+        for (int slot = 0; slot < size; slot++) {
+            MillVillager villager = villagers[slot];
+            Village village = villages[slot];
+            if (villager == null || villager.isRemoved() || village == null) {
+                continue;
+            }
+            visitor.accept(villager, village);
+            visited++;
+        }
+        return visited;
+    }
+
     public int size() {
         return size;
     }
@@ -158,5 +173,10 @@ public final class MillenaireEntityBridge {
         int capacity = Math.max(requested, villagers.length << 1);
         villagers = Arrays.copyOf(villagers, capacity);
         villages = Arrays.copyOf(villages, capacity);
+    }
+
+    @FunctionalInterface
+    public interface LoadedVillagerVisitor {
+        void accept(MillVillager villager, Village village);
     }
 }

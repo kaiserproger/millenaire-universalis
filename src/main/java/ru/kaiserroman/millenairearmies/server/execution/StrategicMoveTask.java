@@ -111,14 +111,14 @@ final class StrategicMoveTask extends ProgressAwareTask {
         if (navigation.isArrivedSameFloor(villager, ARRIVE_DISTANCE)) {
             terminal = true;
             finished = true;
-            executionState.markTerminal(unitHandle, armyHandle, revision);
+            executionState.markArrivedIfCurrent(unitHandle, armyHandle, revision);
             navigation.stop(villager);
             return;
         }
         if (navigation.isAbandoned()) {
             terminal = true;
             finished = true;
-            executionState.markTerminal(unitHandle, armyHandle, revision);
+            executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision);
             navigation.stop(villager);
             return;
         }
@@ -155,7 +155,12 @@ final class StrategicMoveTask extends ProgressAwareTask {
             context.villager().getNavManager().stop(context.villager());
         }
         if (!terminal && !cancelled) {
-            executionState.markRetry(unitHandle, armyHandle, revision);
+            if (reason == StopReason.IMPOSSIBLE) {
+                terminal = true;
+                executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision);
+            } else {
+                executionState.markRetry(unitHandle, armyHandle, revision);
+            }
         }
         finished = true;
     }

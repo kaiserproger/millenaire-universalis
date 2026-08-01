@@ -4,10 +4,13 @@ import java.nio.charset.StandardCharsets;
 import net.minecraft.server.level.ServerPlayer;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedFactionState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
+import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
@@ -27,19 +30,37 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     private final PackedUnitMembership.UuidBits unitUuid;
     private final int[] visibleFactions = new int[ArmiesProtocol.MAX_FACTIONS_PER_SNAPSHOT];
     private FactionProjectionService factionProjection;
+    private final MillenaireRecruitmentService recruitment;
+    private final ServerArmyRosterProjection rosterProjection;
+    private final ArmyOrderExecutionBridge execution;
     private int visibleFactionCount;
 
     public ServerArmyNetworkService(ArmySavedData data, ArmyCommandService commands) {
-        this(data, commands, null);
+        this(data, commands, null, null, null, null);
     }
 
     public ServerArmyNetworkService(
             ArmySavedData data,
             ArmyCommandService commands,
             FactionProjectionService factionProjection) {
+        this(data, commands, factionProjection, null, null, null);
+    }
+
+    public ServerArmyNetworkService(
+            ArmySavedData data,
+            ArmyCommandService commands,
+            FactionProjectionService factionProjection,
+            MillenaireVillageIndex villageIndex,
+            MillenaireRecruitmentService recruitment,
+            ArmyOrderExecutionBridge execution) {
         this.data = data;
         this.commands = commands;
         this.factionProjection = factionProjection;
+        this.recruitment = recruitment;
+        this.rosterProjection = villageIndex == null || factionProjection == null
+                ? null
+                : new ServerArmyRosterProjection(data, villageIndex, factionProjection, recruitment);
+        this.execution = execution;
         this.unitCursor = data.ecs().newUnitCursor();
         this.relationCursor = data.factions().newCursor();
         this.logisticsCursor = data.logistics().newCursor();
@@ -88,29 +109,92 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     public void createArmy(ServerPlayer player, CreateArmyIntent intent) {
         if (intent.expectedRevision() != data.armyRevision() || intent.flags() != 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_CREATE_ARMY,
+                    ArmiesProtocol.RESULT_STALE, 0);
             return;
         }
-        ArmyCommandAuthority authority = authority(player);
-        long result = commands.createArmy(authority, intent.factionId(), intent.homeVillagePosition());
+        if (recruitment == null || intent.templateKeyId() != 0 || intent.desiredUnits() != 1) {
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_CREATE_ARMY,
+                    ArmiesProtocol.RESULT_INVALID, 0);
+            return;
+        }
+        long result = recruitment.createArmy(
+                authority(player), intent.factionId(), intent.homeVillagePosition());
         if (result >= 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }
+        sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_CREATE_ARMY,
+                result >= 0 ? ArmiesProtocol.RESULT_ACCEPTED : recruitmentResult(result),
+                result >= 0 ? intent.desiredUnits() : 0);
+    }
+
+    @Override
+    public void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent) {
+        if (intent.expectedRevision() != data.armyRevision()) {
+            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_RECRUIT,
+                    ArmiesProtocol.RESULT_STALE, 0);
+            return;
+        }
+        if (recruitment == null) {
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_RECRUIT,
+                    ArmiesProtocol.RESULT_INVALID, 0);
+            return;
+        }
+
+        ArmyCommandAuthority authority = authority(player);
+        int affected = 0;
+        long failure = 0L;
+        long[] bits = intent.villagerUuidBits();
+        for (int index = 0; index < intent.count(); index++) {
+            long result = recruitment.recruitSelected(
+                    authority,
+                    intent.armyHandle(),
+                    player.serverLevel(),
+                    player.blockPosition(),
+                    bits[index * 2],
+                    bits[index * 2 + 1]);
+            if (result < 0L) {
+                failure = result;
+                break;
+            }
+            affected++;
+        }
+        if (affected > 0) {
+            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+        }
+        int result = affected == intent.count()
+                ? ArmiesProtocol.RESULT_ACCEPTED
+                : affected > 0 ? ArmiesProtocol.RESULT_PARTIAL : recruitmentResult(failure);
+        sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_RECRUIT, result, affected);
     }
 
     @Override
     public void issueOrder(ServerPlayer player, IssueOrderIntent intent) {
         if (intent.expectedRevision() != data.armyRevision() || intent.flags() != 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
+                    ArmiesProtocol.RESULT_STALE, 0);
             return;
         }
         StrategicArmyOrder order = order(intent.orderType());
         if (order == null) {
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
+                    ArmiesProtocol.RESULT_INVALID, 0);
+            return;
+        }
+        if (order.requiresTarget()
+                && !intent.targetDimension().equals(player.serverLevel().dimension().location())) {
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
+                    ArmiesProtocol.RESULT_INVALID, 0);
             return;
         }
         long result = commands.issueOrder(authority(player), intent.armyHandle(), order, intent.primaryPosition());
         if (result == ArmyCommandService.SUCCESS) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }
+        sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
+                commandResult(result), result == ArmyCommandService.SUCCESS ? 1 : 0);
     }
 
     private void sendSnapshot(ServerPlayer player, byte sections, byte scope, int scopeHandle) {
@@ -215,6 +299,9 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                 setLong(longs, row, 0, Integer.toUnsignedLong(handle));
                 setLong(longs, row, 1, visible.targets[index]);
                 setByte(bytes, row, 0, (byte) visible.orders[index]);
+                setByte(bytes, row, 1, execution == null
+                        ? ArmiesProtocol.EXECUTION_BLOCKED
+                        : execution.armyExecutionStatus(handle));
                 row++;
             }
         }
@@ -234,6 +321,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                 longs,
                 bytes));
         sendFactionMetadata(player);
+        sendRoster(player, 0, ArmiesProtocol.ACTION_NONE, ArmiesProtocol.RESULT_NONE, 0);
     }
 
     private void sendFactionMetadata(ServerPlayer player) {
@@ -393,6 +481,43 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             case ArmiesProtocol.ORDER_RALLY -> StrategicArmyOrder.RALLY;
             case ArmiesProtocol.ORDER_LOGISTICS -> StrategicArmyOrder.LOGISTICS;
             default -> null;
+        };
+    }
+
+    private void sendRoster(ServerPlayer player, int actionId, byte action, int result, int affected) {
+        if (rosterProjection != null) {
+            ArmiesNetwork.sendRoster(player, rosterProjection.snapshot(
+                    player, actionId, action, result, affected));
+        }
+    }
+
+    private static int commandResult(long result) {
+        if (result >= 0 || result == ArmyCommandService.SUCCESS) {
+            return ArmiesProtocol.RESULT_ACCEPTED;
+        }
+        return switch ((int) result) {
+            case (int) ArmyCommandService.PERMISSION_DENIED -> ArmiesProtocol.RESULT_PERMISSION_DENIED;
+            case (int) ArmyCommandService.ARMY_NOT_FOUND -> ArmiesProtocol.RESULT_NOT_FOUND;
+            case (int) ArmyCommandService.LIMIT_REACHED -> ArmiesProtocol.RESULT_LIMIT_REACHED;
+            default -> ArmiesProtocol.RESULT_INVALID;
+        };
+    }
+
+    private static int recruitmentResult(long result) {
+        return switch ((int) result) {
+            case (int) MillenaireRecruitmentService.PERMISSION_DENIED,
+                    (int) MillenaireRecruitmentService.WRONG_FACTION,
+                    (int) MillenaireRecruitmentService.SETTLEMENT_NOT_CONTROLLED,
+                    (int) MillenaireRecruitmentService.REPUTATION_TOO_LOW ->
+                    ArmiesProtocol.RESULT_PERMISSION_DENIED;
+            case (int) MillenaireRecruitmentService.ARMY_NOT_FOUND,
+                    (int) MillenaireRecruitmentService.VILLAGE_NOT_FOUND,
+                    (int) MillenaireRecruitmentService.VILLAGER_NOT_IN_VILLAGE,
+                    (int) MillenaireRecruitmentService.VILLAGER_NOT_LOADED -> ArmiesProtocol.RESULT_NOT_FOUND;
+            case (int) MillenaireRecruitmentService.UNIT_LIMIT_REACHED,
+                    (int) MillenaireRecruitmentService.ARMY_LIMIT_REACHED,
+                    (int) MillenaireRecruitmentService.ARMY_FULL -> ArmiesProtocol.RESULT_LIMIT_REACHED;
+            default -> ArmiesProtocol.RESULT_INVALID;
         };
     }
 

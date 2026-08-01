@@ -143,7 +143,13 @@ public final class ArmyLifecycleService {
                 entityBridge,
                 UnitDescriptorCatalog.INSTANCE,
                 savedData.memberships().size());
-        networkService = new ServerArmyNetworkService(savedData, commandService, factionProjection);
+        networkService = new ServerArmyNetworkService(
+                savedData,
+                commandService,
+                factionProjection,
+                villageIndex,
+                recruitmentService,
+                orderExecution);
         ServerIntentRouter.install(networkService);
         phaseStart = System.nanoTime();
         int entityChanges = entityBridge.reconcile(villageIndex);
