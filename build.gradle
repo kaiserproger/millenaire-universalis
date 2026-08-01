@@ -1,0 +1,86 @@
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+dependencies {
+    compileOnly files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
+
+    // Opt-in only: load the assembled client/server content while exercising the real UI against
+    // the dedicated server.  Production artifacts remain unchanged and the source-set armies mod
+    // is deliberately not duplicated by the deployed JAR.
+    if (rootProject.findProperty('fullClientSmoke') == 'true') {
+        runtimeOnly fileTree(rootProject.file('../mods')) {
+            include '*.jar'
+            exclude 'millenaire_armies-*.jar'
+            exclude 'sarvaroptimizer_*.jar'
+            exclude 'neoforge-carpet-*.jar'
+        }
+        // Client render optimizers are intentionally omitted here: UserDev places file
+        // dependencies on its transformation classpath instead of a normal mods directory, which
+        // makes Sodium look like a library to FML.  The distributable client tests those JARs in a
+        // regular instance; this run is for the addon UI and synced registries.
+    }
+}
+
+tasks.register('runLogisticsSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the deterministic fixed-storage strategic logistics self-test.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.logistics.StrategicLogisticsEngineSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runSupplyPublisherSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs bounded, read-only Millenaire inventory projection self-tests.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.logistics.StrategicSupplyPublisherSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runNetworkStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs bounded armies network, metadata and primitive client mirror self-tests.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.client.state.NetworkStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs primitive army order revision and execution acknowledgement self-tests.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runStrategicTelemetrySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks allocation-free phase counters for future strategic snapshot/compute seams.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.telemetry.StrategicPhaseTelemetrySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runStrategicWorkerGateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Proves non-zero harness worker requests remain explicitly NOT_APPLICABLE without a real kernel.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.telemetry.StrategicWorkerGateSelfTest'
+    jvmArgs '-ea', '-Dbannerok.experimental.workerCount=2'
+    dependsOn classes
+}
+
+tasks.register('runArmyPersistenceSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks NBT round-trip parity for packed army, command, faction and logistics state.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.ArmyPersistenceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}

@@ -1,0 +1,25 @@
+{
+  "mainhand": [
+    "magistuarmory:steel_shortsword",
+    "minecraft:iron_sword"
+  ],
+  "offhand": [
+    "magistuarmory:buckler",
+    "minecraft:shield"
+  ],
+  "head": [
+    "magistuarmory:kettlehat",
+    "minecraft:chainmail_helmet"
+  ],
+  "chest": [
+    "magistuarmory:gambeson_chestplate",
+    "minecraft:leather_chestplate"
+  ],
+  "legs": [
+    "minecraft:leather_leggings"
+  ],
+  "feet": [
+    "magistuarmory:gambeson_boots",
+    "minecraft:leather_boots"
+  ]
+}

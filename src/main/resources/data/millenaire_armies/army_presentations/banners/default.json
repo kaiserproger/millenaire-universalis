@@ -1,0 +1,7 @@
+{
+  "$schema": "../../schemas/army_presentation.schema.json",
+  "translation_key": "presentation.millenaire_armies.banner.default",
+  "short_label": "◆",
+  "color": "#b73737",
+  "icon": "minecraft:textures/entity/banner_base.png"
+}

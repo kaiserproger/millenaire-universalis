@@ -1,0 +1,28 @@
+{
+  "mainhand": [
+    "magistuarmory:steel_bastardsword",
+    "minecraft:diamond_sword",
+    "minecraft:iron_sword"
+  ],
+  "offhand": [
+    "magistuarmory:steel_heatershield",
+    "minecraft:shield"
+  ],
+  "head": [
+    "magistuarmory:armet_with_plume",
+    "magistuarmory:armet",
+    "minecraft:iron_helmet"
+  ],
+  "chest": [
+    "magistuarmory:platemail_chestplate",
+    "minecraft:iron_chestplate"
+  ],
+  "legs": [
+    "magistuarmory:platemail_leggings",
+    "minecraft:iron_leggings"
+  ],
+  "feet": [
+    "magistuarmory:platemail_boots",
+    "minecraft:iron_boots"
+  ]
+}

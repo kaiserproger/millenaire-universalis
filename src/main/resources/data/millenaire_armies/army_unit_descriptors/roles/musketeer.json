@@ -1,0 +1,5 @@
+{
+  "default_rank": "millenaire_armies:levy",
+  "default_loadout": "millenaire_armies:musketeer",
+  "formation_priority": 20
+}

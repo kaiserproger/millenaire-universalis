@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sarvar.local/schemas/millenaire-armies/army-presentation.schema.json",
+  "title": "Millenaire Armies presentation entry",
+  "description": "Shared schema for role, rank, banner, and order-status presentation entries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "translation_key",
+    "short_label",
+    "color",
+    "icon"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "translation_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "short_label": {
+      "type": "string",
+      "maxLength": 16
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "icon": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9/._-]+$"
+    }
+  }
+}

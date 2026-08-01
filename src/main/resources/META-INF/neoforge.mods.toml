@@ -1,0 +1,32 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="millenaire_armies"
+version="1.0.0-alpha.1"
+displayName="Millenaire Armies"
+authors="Local server build"
+description='''A client/server Millenaire addon for factions, army command, logistics, and strategic UI.'''
+
+[[dependencies.millenaire_armies]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.247]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.millenaire_armies]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.millenaire_armies]]
+modId="millenaire"
+type="required"
+reason="This addon targets Millenaire 9.0.0-beta.2 on Minecraft 1.21.1."
+versionRange="[9.0.0-beta.2]"
+ordering="AFTER"
+side="BOTH"

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sarvar.invalid/schemas/army_unit_descriptor.schema.json",
+  "title": "Millenaire Armies unit descriptor",
+  "oneOf": [
+    {
+      "title": "Role",
+      "type": "object",
+      "properties": {
+        "default_rank": { "$ref": "#/$defs/resourceLocation" },
+        "default_loadout": { "$ref": "#/$defs/resourceLocation" },
+        "formation_priority": { "type": "integer", "minimum": -32768, "maximum": 32767 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Rank",
+      "type": "object",
+      "properties": {
+        "command_tier": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sort_priority": { "type": "integer", "minimum": -32768, "maximum": 32767 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "Loadout",
+      "type": "object",
+      "properties": {
+        "mainhand": { "$ref": "#/$defs/itemCandidates" },
+        "offhand": { "$ref": "#/$defs/itemCandidates" },
+        "head": { "$ref": "#/$defs/itemCandidates" },
+        "chest": { "$ref": "#/$defs/itemCandidates" },
+        "legs": { "$ref": "#/$defs/itemCandidates" },
+        "feet": { "$ref": "#/$defs/itemCandidates" }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "resourceLocation": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9/._-]+$"
+    },
+    "itemCandidates": {
+      "oneOf": [
+        { "$ref": "#/$defs/resourceLocation" },
+        {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/resourceLocation" }
+        }
+      ]
+    }
+  }
+}

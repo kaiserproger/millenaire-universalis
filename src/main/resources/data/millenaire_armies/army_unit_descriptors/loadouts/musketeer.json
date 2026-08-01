@@ -1,0 +1,22 @@
+{
+  "mainhand": [
+    "musketmod:musket_with_bayonet",
+    "musketmod:musket",
+    "minecraft:crossbow"
+  ],
+  "head": [
+    "magistuarmory:kettlehat",
+    "minecraft:leather_helmet"
+  ],
+  "chest": [
+    "magistuarmory:gambeson_chestplate",
+    "minecraft:leather_chestplate"
+  ],
+  "legs": [
+    "minecraft:leather_leggings"
+  ],
+  "feet": [
+    "magistuarmory:gambeson_boots",
+    "minecraft:leather_boots"
+  ]
+}

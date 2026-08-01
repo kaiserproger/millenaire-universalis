@@ -1,0 +1,27 @@
+{
+  "mainhand": [
+    "magistuarmory:steel_bastardsword",
+    "magistuarmory:steel_shortsword",
+    "minecraft:iron_sword"
+  ],
+  "offhand": [
+    "magistuarmory:steel_heatershield",
+    "minecraft:shield"
+  ],
+  "head": [
+    "magistuarmory:bascinet",
+    "minecraft:iron_helmet"
+  ],
+  "chest": [
+    "magistuarmory:brigandine_chestplate",
+    "minecraft:iron_chestplate"
+  ],
+  "legs": [
+    "magistuarmory:chainmail_leggings",
+    "minecraft:iron_leggings"
+  ],
+  "feet": [
+    "magistuarmory:brigandine_boots",
+    "minecraft:iron_boots"
+  ]
+}

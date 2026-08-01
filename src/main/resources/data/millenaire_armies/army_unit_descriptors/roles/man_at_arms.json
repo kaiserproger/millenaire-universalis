@@ -1,0 +1,5 @@
+{
+  "default_rank": "millenaire_armies:sergeant",
+  "default_loadout": "millenaire_armies:man_at_arms",
+  "formation_priority": 30
+}
