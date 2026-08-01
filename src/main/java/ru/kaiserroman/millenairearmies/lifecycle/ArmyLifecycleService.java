@@ -12,11 +12,13 @@ import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionS
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireInventorySupplyBridge;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireSettlementEconomyBridge;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
 import ru.kaiserroman.millenairearmies.network.ServerArmyNetworkService;
 import ru.kaiserroman.millenairearmies.network.ServerIntentRouter;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.server.diplomacy.DiplomacyIntegration;
+import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
 import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
 import ru.kaiserroman.millenairearmies.server.execution.OrderExecutionPolicy;
 import ru.kaiserroman.millenairearmies.server.logistics.StrategicLogisticsEngine;
@@ -58,9 +60,12 @@ public final class ArmyLifecycleService {
     private StrategicLogisticsEngine logisticsEngine;
     private MillenaireInventorySupplyBridge inventorySupplyBridge;
     private StrategicSupplyPublisher supplyPublisher;
+    private SettlementEconomyEngine settlementEconomy;
+    private MillenaireSettlementEconomyBridge settlementEconomyBridge;
     private UnitRoleService unitRoleService;
     private int ticksUntilReconcile;
     private boolean reconcileRequested;
+    private long completedEconomyRevision;
 
     public boolean start(MinecraftServer startingServer) {
         if (state == State.RUNNING) {
@@ -102,12 +107,34 @@ public final class ArmyLifecycleService {
                 System.nanoTime() - phaseStart,
                 factionProjection.size());
         if (ArmiesConfig.LOGISTICS_INVENTORY_PROJECTION_ENABLED) {
+            settlementEconomy = new SettlementEconomyEngine(
+                    savedData.settlementEconomy(),
+                    savedData::setDirty,
+                    ArmiesConfig.SETTLEMENT_ECONOMY_INTERVAL_TICKS,
+                    ArmiesConfig.SETTLEMENT_ECONOMY_ROWS_PER_TICK,
+                    ArmiesConfig.SETTLEMENT_SHIPMENTS_PER_TICK,
+                    ArmiesConfig.SETTLEMENT_ROUTES_PER_TICK,
+                    ArmiesConfig.MAX_SETTLEMENTS,
+                    ArmiesConfig.MAX_SETTLEMENT_SHIPMENTS,
+                    ArmiesConfig.SETTLEMENT_MAX_ROUTE_BLOCKS);
+            settlementEconomyBridge = new MillenaireSettlementEconomyBridge(
+                    villageIndex,
+                    factionProjection,
+                    savedData.dimensions(),
+                    savedData.items(),
+                    settlementEconomy,
+                    ArmiesConfig.SETTLEMENT_SCAN_ROWS_PER_TICK);
+            // Commodity dictionary interning and persisted slot binding happen in the bridge
+            // constructor, before the first village row can otherwise mark SavedData dirty.
+            savedData.setDirty();
+            logisticsEngine.installSupplyMutationSink(settlementEconomy);
             inventorySupplyBridge = new MillenaireInventorySupplyBridge(
                     villageIndex,
                     factionProjection,
                     savedData.dimensions(),
                     savedData.items(),
-                    ArmiesConfig.MAX_SUPPLY_KEYS);
+                    ArmiesConfig.MAX_SUPPLY_KEYS,
+                    settlementEconomy);
             supplyPublisher = new StrategicSupplyPublisher(
                     logisticsEngine,
                     savedData.logistics(),
@@ -116,10 +143,10 @@ public final class ArmyLifecycleService {
                     ArmiesConfig.LOGISTICS_PUBLISHER_REQUEST_ROWS_PER_TICK,
                     ArmiesConfig.LOGISTICS_PUBLISHER_KEYS_PER_TICK,
                     ArmiesConfig.LOGISTICS_PUBLISHER_SWEEP_TICKS);
-            LOGGER.warn(
-                    "EXPERIMENTAL read-only Millenaire inventory projection is enabled: it never force-loads chunks, but one aggregate key scan can visit every loaded village/building; physical dispatch remains disabled");
+            LOGGER.info(
+                    "Settlement economy enabled: bounded initial Millenaire inventory scan, persisted shipment WAL, reserves and same-faction coarse trade routes are active");
         } else {
-            LOGGER.info("Millenaire inventory projection is disabled (production default); no bridge tables or physical inventory scans were installed");
+            LOGGER.warn("Millenaire inventory projection was explicitly disabled; settlement economy, reserve-aware recruitment and physical inventory scans are inactive");
         }
         commandService.installFactionValidator(factionProjection);
         recruitmentService.start(
@@ -130,6 +157,9 @@ public final class ArmyLifecycleService {
                 savedData.logistics(),
                 savedData::markArmyChanged);
         recruitmentService.installFactionPolicy(factionProjection);
+        if (settlementEconomy != null) {
+            recruitmentService.installSupplyPolicy(settlementEconomy);
+        }
         if (OrderExecutionPolicy.shouldStart(ArmiesConfig.ORDER_EXECUTION_ENABLED)) {
             orderExecution = new ArmyOrderExecutionBridge();
             orderExecution.start(
@@ -149,7 +179,7 @@ public final class ArmyLifecycleService {
                 UnitDescriptorCatalog.INSTANCE,
                 savedData.memberships().size());
         networkService = new ServerArmyNetworkService(
-                savedData, commandService, factionProjection, recruitmentService);
+                savedData, commandService, factionProjection, recruitmentService, settlementEconomy);
         ServerIntentRouter.install(networkService);
         phaseStart = System.nanoTime();
         int entityChanges = entityBridge.reconcile(villageIndex);
@@ -176,6 +206,15 @@ public final class ArmyLifecycleService {
         }
         // This intentionally has no player-count gate: strategic village supply remains alive.
         long gameTime = tickingServer.overworld().getGameTime();
+        if (settlementEconomyBridge != null) {
+            settlementEconomyBridge.tick(gameTime);
+            long completed = settlementEconomyBridge.completedRevisionCount();
+            if (completed != completedEconomyRevision) {
+                completedEconomyRevision = completed;
+                supplyPublisher.requestReconcileAll();
+            }
+            settlementEconomy.tick(gameTime);
+        }
         if (supplyPublisher != null) {
             long phaseStart = System.nanoTime();
             supplyPublisher.tick(gameTime);
@@ -228,6 +267,9 @@ public final class ArmyLifecycleService {
                 entityBridge.size());
         if (supplyPublisher != null) {
             supplyPublisher.requestReconcileAll();
+        }
+        if (settlementEconomyBridge != null) {
+            settlementEconomyBridge.requestReconcile();
         }
         ticksUntilReconcile = RECONCILE_INTERVAL_TICKS;
         reconcileRequested = false;
@@ -286,8 +328,22 @@ public final class ArmyLifecycleService {
         }
         recruitmentService.stop(server);
         diplomacy.stop(server);
+        if (settlementEconomy != null) {
+            LOGGER.info(
+                    "[BANNEROK_SETTLEMENT_ECONOMY_METRICS] settlements={} shipments={} created={} delivered={} rolled_back={} rejected_routes={} physical_reconciliation_shortfall={} primitive_bytes={}",
+                    settlementEconomy.state().settlementCount(),
+                    settlementEconomy.state().shipmentCount(),
+                    settlementEconomy.createdShipmentCount(),
+                    settlementEconomy.deliveredShipmentCount(),
+                    settlementEconomy.rolledBackShipmentCount(),
+                    settlementEconomy.rejectedRouteCount(),
+                    settlementEconomy.physicalReconciliationShortfall(),
+                    settlementEconomy.state().estimatedPrimitiveBytes());
+        }
         supplyPublisher = null;
         inventorySupplyBridge = null;
+        settlementEconomyBridge = null;
+        settlementEconomy = null;
         LOGGER.info(
                 "[BANNEROK_ARMIES_PHASE_METRICS] worker_requested={} worker_active={} logistics_calls={} logistics_ns={} logistics_max_ns={} capture_calls={} capture_ns={} projection_calls={} projection_ns={} projection_max_ns={} entity_reconcile_ns={}",
                 ArmiesConfig.REQUESTED_STRATEGIC_WORKER_COUNT,
@@ -309,6 +365,7 @@ public final class ArmyLifecycleService {
         server = null;
         reconcileRequested = false;
         ticksUntilReconcile = 0;
+        completedEconomyRevision = 0L;
         entityBridge.clear();
         villageIndex.clear();
         return true;
@@ -348,6 +405,10 @@ public final class ArmyLifecycleService {
 
     public StrategicSupplyPublisher supplyPublisher() {
         return supplyPublisher;
+    }
+
+    public SettlementEconomyEngine settlementEconomy() {
+        return settlementEconomy;
     }
 
     public UnitRoleService unitRoleService() {

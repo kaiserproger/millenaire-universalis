@@ -59,6 +59,7 @@ public final class StrategicLogisticsEngine {
     private PackedLogisticsState logistics;
     private PackedCommandState commands;
     private DirtyMarker dirtyMarker;
+    private SupplyMutationSink supplyMutationSink = SupplyMutationSink.NONE;
     private long lastGameTime = Long.MIN_VALUE;
     private int processedEvents;
     private int rejectedEvents;
@@ -116,6 +117,11 @@ public final class StrategicLogisticsEngine {
 
     public boolean isRunning() {
         return logistics != null;
+    }
+
+    /** Installs the settlement-ledger commit boundary used by physical/strategic dispatch. */
+    public void installSupplyMutationSink(SupplyMutationSink installed) {
+        supplyMutationSink = Objects.requireNonNull(installed, "installed");
     }
 
     /** Adds a persisted request immediately on the owning server thread. */
@@ -428,7 +434,21 @@ public final class StrategicLogisticsEngine {
         if (supplies == null
                 || bucket == PackedSupplyLedger.NO_BUCKET
                 || amount != remaining
-                || !supplies.dispatch(bucket, amount)) {
+                || amount > supplies.reserved(bucket)
+                || amount > supplies.stock(bucket)
+                || !supplyMutationSink.tryDebit(
+                        logistics.factionIdAt(row),
+                        logistics.dimensionIdAt(row),
+                        logistics.itemKeyAt(row),
+                        amount)) {
+            return false;
+        }
+        if (!supplies.dispatch(bucket, amount)) {
+            supplyMutationSink.credit(
+                    logistics.factionIdAt(row),
+                    logistics.dimensionIdAt(row),
+                    logistics.itemKeyAt(row),
+                    amount);
             return false;
         }
         reservedAmounts[row] = 0;
@@ -584,6 +604,7 @@ public final class StrategicLogisticsEngine {
     }
 
     private void releaseRuntimeStorage() {
+        supplyMutationSink = SupplyMutationSink.NONE;
         supplies = null;
         reservationBuckets = EMPTY_INTS;
         reservedAmounts = EMPTY_INTS;

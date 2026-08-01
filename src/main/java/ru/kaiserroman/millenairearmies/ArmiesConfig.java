@@ -48,13 +48,28 @@ public final class ArmiesConfig {
     public static final int LOGISTICS_EVENTS_PER_TICK =
             integer("logisticsEventsPerTick", 128, 1, 65_536);
     public static final boolean LOGISTICS_INVENTORY_PROJECTION_ENABLED =
-            bool("logisticsInventoryProjectionEnabled", false);
+            bool("logisticsInventoryProjectionEnabled", true);
     public static final int LOGISTICS_PUBLISHER_REQUEST_ROWS_PER_TICK =
             integer("logisticsPublisherRequestRowsPerTick", 64, 1, 65_536);
     public static final int LOGISTICS_PUBLISHER_KEYS_PER_TICK =
             integer("logisticsPublisherKeysPerTick", 4, 1, 4_096);
     public static final int LOGISTICS_PUBLISHER_SWEEP_TICKS =
             integer("logisticsPublisherSweepTicks", 200, 20, 72_000);
+    public static final int MAX_SETTLEMENTS = integer("maxSettlements", 4_096, 1, 65_536);
+    public static final int MAX_SETTLEMENT_SHIPMENTS =
+            integer("maxSettlementShipments", 16_384, 16, 1_000_000);
+    public static final int SETTLEMENT_ECONOMY_INTERVAL_TICKS =
+            integer("settlementEconomyIntervalTicks", 200, 20, 72_000);
+    public static final int SETTLEMENT_ECONOMY_ROWS_PER_TICK =
+            integer("settlementEconomyRowsPerTick", 16, 1, 4_096);
+    public static final int SETTLEMENT_SHIPMENTS_PER_TICK =
+            integer("settlementShipmentsPerTick", 64, 1, 65_536);
+    public static final int SETTLEMENT_ROUTES_PER_TICK =
+            integer("settlementRoutesPerTick", 8, 1, 4_096);
+    public static final int SETTLEMENT_SCAN_ROWS_PER_TICK =
+            integer("settlementScanRowsPerTick", 2, 1, 1_024);
+    public static final int SETTLEMENT_MAX_ROUTE_BLOCKS =
+            integer("settlementMaxRouteBlocks", 16_384, 128, 30_000_000);
 
     private ArmiesConfig() {}
 

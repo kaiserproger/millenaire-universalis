@@ -78,9 +78,31 @@ public final class ArmyPersistenceSelfTest {
 
         PackedLogisticsState logistics = new PackedLogisticsState(1);
         logistics.add(20, blue, ironKey, 64, overworld, PackedArmyEcs.packBlockPos(8, 70, 9), 999L, (byte) 3);
+        int breadKey = items.intern(ResourceLocation.parse("minecraft:bread"));
+        int leatherKey = items.intern(ResourceLocation.parse("minecraft:leather"));
+        int arrowKey = items.intern(ResourceLocation.parse("minecraft:arrow"));
+        PackedSettlementEconomyState economy = new PackedSettlementEconomyState();
+        economy.configureCommodityKeys(breadKey, ironKey, leatherKey, arrowKey);
+        int producer = economy.upsertSettlement(0x101L, 0x201L, 20, overworld, 1L, 200L);
+        int consumer = economy.upsertSettlement(0x102L, 0x202L, 20, overworld, 2L, 200L);
+        economy.configureRates(producer, 0, 16, 3, 1);
+        economy.configureRates(consumer, 0, 32, 0, 2);
+        economy.observePhysicalStock(producer, 0, 64);
+        economy.observePhysicalStock(consumer, 0, 0);
+        check(economy.tryDebit(producer, 0, 24), "economy test shipment debited");
+        economy.addShipment(producer, consumer, 0, 24, 400L);
 
         ArmySavedData source = new ArmySavedData(
-                dimensions, items, factions, sourceEcs, memberships, controllers, 7L, sourceCommands, logistics);
+                dimensions,
+                items,
+                factions,
+                sourceEcs,
+                memberships,
+                controllers,
+                7L,
+                sourceCommands,
+                logistics,
+                economy);
         CompoundTag encoded = source.save(new CompoundTag(), null);
         check(encoded.getInt("SchemaVersion") == ArmyNbtCodec.SCHEMA_VERSION, "schema written");
         check(encoded.getCompound("Armies").getInt("Count") == 2, "army count written");
@@ -95,6 +117,11 @@ public final class ArmyPersistenceSelfTest {
         check(restored.memberships().size() == 2, "unit memberships restored");
         check(restored.controllers().size() == 1, "controller restored");
         check(restored.logistics().size() == 1, "logistics restored");
+        check(restored.settlementEconomy().settlementCount() == 2, "settlements restored");
+        check(restored.settlementEconomy().shipmentCount() == 1, "shipment WAL restored");
+        check(restored.settlementEconomy().shipmentStatusAt(0)
+                        == PackedSettlementEconomyState.SHIPMENT_IN_TRANSIT,
+                "in-transit settlement shipment restored");
         check(restored.armyRevision() == 7L, "army revision restored");
         check(restored.dimensions().name(nether).equals(Level.NETHER.location()), "dimension dictionary restored");
         check(restored.items().name(ironKey).equals(ResourceLocation.parse("minecraft:iron_ingot")),
@@ -169,6 +196,9 @@ public final class ArmyPersistenceSelfTest {
         check(secondRestore.ecs().unitSize() == 3, "second round-trip units");
         check(secondRestore.commands().size() == 3, "second round-trip commands");
         check(secondRestore.logistics().size() == 1, "second round-trip logistics");
+        check(secondRestore.settlementEconomy().deterministicHash()
+                        == restored.settlementEconomy().deterministicHash(),
+                "second round-trip settlement economy parity");
     }
 
     private static void corruptLengthsAndUnknownVersionsAreRejected() {

@@ -12,8 +12,9 @@ import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
  * discovered in a bounded stripe, while inventory reconciliation is driven by a fixed primitive
  * dirty queue plus a low-frequency safety sweep. Once constructed, an idle tick allocates no
  * objects and scans neither villages nor containers. This publisher only reports stock: it never
- * removes items or reports dispatch/delivery. Those mutations remain disabled until a persisted,
- * idempotent shipment/WAL and component-aware physical courier inventory exist.</p>
+ * removes items or reports dispatch/delivery. Dispatch commits through {@link SupplyMutationSink}
+ * against the persisted settlement ledger; this publisher does not claim a physical courier or an
+ * atomic block-entity transfer.</p>
  */
 public final class StrategicSupplyPublisher {
     private static final byte EMPTY = 0;

@@ -24,6 +24,7 @@ final class ArmyNbtCodec {
     private static final String TAG_CONTROLLERS = "Controllers";
     private static final String TAG_COMMANDS = "Commands";
     private static final String TAG_LOGISTICS = "Logistics";
+    private static final String TAG_SETTLEMENT_ECONOMY = "SettlementEconomy";
     private static final String TAG_COUNT = "Count";
 
     private ArmyNbtCodec() {
@@ -39,7 +40,8 @@ final class ArmyNbtCodec {
             PackedArmyControllers controllers,
             long armyRevision,
             PackedCommandState commands,
-            PackedLogisticsState logistics) {
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy) {
         root.putInt(TAG_SCHEMA_VERSION, SCHEMA_VERSION);
 
         ListTag dimensionNames = new ListTag();
@@ -278,11 +280,17 @@ final class ArmyNbtCodec {
         logisticsTag.putByteArray("Statuses", statuses);
         logisticsTag.putLongArray("Revisions", logisticsRevisions);
         root.put(TAG_LOGISTICS, logisticsTag);
+        root.put(TAG_SETTLEMENT_ECONOMY, settlementEconomy.save(new CompoundTag()));
         return root;
     }
 
     static LoadedState load(
-            CompoundTag root, int maxFactionRelations, int maxCommands, int maxLogisticsRequests) {
+            CompoundTag root,
+            int maxFactionRelations,
+            int maxCommands,
+            int maxLogisticsRequests,
+            int maxSettlements,
+            int maxSettlementShipments) {
         int schemaVersion = root.getInt(TAG_SCHEMA_VERSION);
         if (schemaVersion != LEGACY_SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION) {
             throw new IllegalArgumentException(
@@ -500,8 +508,33 @@ final class ArmyNbtCodec {
                     logisticsRevisions[logisticsRow]);
         }
         logistics.restoreCounters(logisticsTag.getLong("NextRequestId"), logisticsTag.getLong("NextRevision"));
+        PackedSettlementEconomyState settlementEconomy = root.contains(TAG_SETTLEMENT_ECONOMY)
+                ? PackedSettlementEconomyState.load(
+                        root.getCompound(TAG_SETTLEMENT_ECONOMY), maxSettlements, maxSettlementShipments)
+                : new PackedSettlementEconomyState();
+        int configuredCommodityKeys = 0;
+        for (int commodity = 0; commodity < PackedSettlementEconomyState.COMMODITY_COUNT; commodity++) {
+            int itemKey = settlementEconomy.commodityItemKey(commodity);
+            if (itemKey >= 0) {
+                requireItemId(items, itemKey);
+                configuredCommodityKeys++;
+            }
+        }
+        if (configuredCommodityKeys != 0
+                && configuredCommodityKeys != PackedSettlementEconomyState.COMMODITY_COUNT) {
+            throw new IllegalArgumentException("Settlement commodity dictionary is only partially configured");
+        }
         return new LoadedState(
-                dimensions, items, factions, ecs, memberships, controllers, armyRevision, commands, logistics);
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                settlementEconomy);
     }
 
     private static void requireDimensionId(StableDimensionTable dimensions, int dimensionId, String owner) {
@@ -579,7 +612,8 @@ final class ArmyNbtCodec {
             PackedArmyControllers controllers,
             long armyRevision,
             PackedCommandState commands,
-            PackedLogisticsState logistics) {
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy) {
     }
 
     /** Small primitive open-addressed table used only while serializing an ECS snapshot. */

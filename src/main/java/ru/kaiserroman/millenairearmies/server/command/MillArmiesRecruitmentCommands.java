@@ -292,6 +292,8 @@ public final class MillArmiesRecruitmentCommands {
                     "Invalid requested fighter count";
             case (int) MillenaireRecruitmentService.WRONG_DIMENSION ->
                     "Recruitment must be performed by a player in the settlement dimension";
+            case (int) MillenaireRecruitmentService.SUPPLY_SHORTAGE ->
+                    "Settlement reserves cannot equip another recruit";
             default -> "Recruitment failed (" + result + ')';
         };
     }

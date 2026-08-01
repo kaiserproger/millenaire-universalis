@@ -14,6 +14,7 @@ import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesRecruitmentCommands;
+import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
 
 /**
  * Minimal authoritative networking vertical slice. It projects only armies controlled by the
@@ -31,28 +32,31 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     private final int[] visibleFactions = new int[ArmiesProtocol.MAX_FACTIONS_PER_SNAPSHOT];
     private FactionProjectionService factionProjection;
     private final MillenaireRecruitmentService recruitment;
+    private final SettlementEconomyEngine settlementEconomy;
     private int visibleFactionCount;
 
     public ServerArmyNetworkService(ArmySavedData data, ArmyCommandService commands) {
-        this(data, commands, null, null);
+        this(data, commands, null, null, null);
     }
 
     public ServerArmyNetworkService(
             ArmySavedData data,
             ArmyCommandService commands,
             FactionProjectionService factionProjection) {
-        this(data, commands, factionProjection, null);
+        this(data, commands, factionProjection, null, null);
     }
 
     public ServerArmyNetworkService(
             ArmySavedData data,
             ArmyCommandService commands,
             FactionProjectionService factionProjection,
-            MillenaireRecruitmentService recruitment) {
+            MillenaireRecruitmentService recruitment,
+            SettlementEconomyEngine settlementEconomy) {
         this.data = data;
         this.commands = commands;
         this.factionProjection = factionProjection;
         this.recruitment = recruitment;
+        this.settlementEconomy = settlementEconomy;
         this.unitCursor = data.ecs().newUnitCursor();
         this.relationCursor = data.factions().newCursor();
         this.logisticsCursor = data.logistics().newCursor();
@@ -383,7 +387,13 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
         setInt(ints, row, ArmiesProtocol.COLUMN_PRIMARY_KEY, visible.states[index]);
         setInt(ints, row, ArmiesProtocol.COLUMN_SECONDARY_KEY, visible.units[index]);
         setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_0, visible.units[index]);
-        setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_1, 100);
+        setInt(
+                ints,
+                row,
+                ArmiesProtocol.COLUMN_VALUE_1,
+                settlementEconomy == null
+                        ? 100
+                        : settlementEconomy.factionSupplyPercent(visible.factions[index]));
         setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_2, 100);
         setLong(longs, row, 0, visible.targets[index]);
         setLong(longs, row, 1, visible.targets[index]);

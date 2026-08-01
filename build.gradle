@@ -40,6 +40,15 @@ tasks.register('runSupplyPublisherSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runSettlementEconomySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs persisted NPC-settlement economy, trade, shortage and allocation self-tests.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngineSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runNetworkStateSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs bounded armies network, metadata and primitive client mirror self-tests.'

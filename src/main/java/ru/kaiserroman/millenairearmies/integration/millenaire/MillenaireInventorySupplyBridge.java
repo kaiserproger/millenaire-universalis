@@ -12,17 +12,18 @@ import org.millenaire.building.BuildingInventory;
 import org.millenaire.village.Village;
 import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 import ru.kaiserroman.millenairearmies.persistence.StableItemTable;
+import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
 import ru.kaiserroman.millenairearmies.server.logistics.SupplyInventoryAccess;
 
 /**
  * Public-API-only bridge from physical Millenaire building inventories to strategic supplies.
  *
  * <p>It deliberately does not poll villagers, entities, combat, targets, or paths. Aggregate scans
- * are invoked only by the bounded publisher. The bridge is strictly read-only: item-only keys
- * cannot preserve stack DataComponents, furnace/firepit removal cannot be rolled back through the
- * chest-only add API, and block-entity saves cannot be atomically committed with SavedData. Physical
- * dispatch/delivery therefore remains disabled until a persisted idempotent shipment/WAL and a
- * component-aware courier inventory are implemented.</p>
+ * are invoked only by the bounded publisher. The physical side stays read-only because block-entity
+ * saves cannot be atomically committed with SavedData. Army commodities are instead served by the
+ * persisted settlement ledger after its bounded initial scan; later physical revisions enter as
+ * deltas and therefore cannot erase prior strategic debits. This is not a claim that a physical
+ * courier entity or chest transfer occurred.</p>
  */
 public final class MillenaireInventorySupplyBridge implements SupplyInventoryAccess {
     private final MillenaireVillageIndex villageIndex;
@@ -34,6 +35,7 @@ public final class MillenaireInventorySupplyBridge implements SupplyInventoryAcc
     private final ResourceLocation[] resolvedDimensions;
     private final byte[] itemResolution;
     private final byte[] dimensionResolution;
+    private final SettlementEconomyEngine economy;
 
     private long reconciliationCacheToken = Long.MIN_VALUE + 1L;
 
@@ -43,10 +45,21 @@ public final class MillenaireInventorySupplyBridge implements SupplyInventoryAcc
             StableDimensionTable dimensions,
             StableItemTable items,
             int maximumStableKeys) {
+        this(villageIndex, factions, dimensions, items, maximumStableKeys, null);
+    }
+
+    public MillenaireInventorySupplyBridge(
+            MillenaireVillageIndex villageIndex,
+            FactionProjectionService factions,
+            StableDimensionTable dimensions,
+            StableItemTable items,
+            int maximumStableKeys,
+            SettlementEconomyEngine economy) {
         this.villageIndex = Objects.requireNonNull(villageIndex, "villageIndex");
         this.factions = Objects.requireNonNull(factions, "factions");
         this.dimensions = Objects.requireNonNull(dimensions, "dimensions");
         this.items = Objects.requireNonNull(items, "items");
+        this.economy = economy;
         if (maximumStableKeys <= 0) {
             throw new IllegalArgumentException("Millenaire supply bridge key bound must be positive");
         }
@@ -70,6 +83,11 @@ public final class MillenaireInventorySupplyBridge implements SupplyInventoryAcc
 
     @Override
     public int absoluteStock(int factionId, int dimensionId, int itemKey) {
+        if (economy != null) {
+            return economy.state().commodityForItemKey(itemKey) >= 0
+                    ? economy.absoluteAvailableStock(factionId, dimensionId, itemKey)
+                    : UNAVAILABLE;
+        }
         Item item = resolveItem(itemKey);
         ResourceLocation dimension = resolveDimension(dimensionId);
         if (item == null || dimension == null || factions.findFactionRow(factionId) < 0) {

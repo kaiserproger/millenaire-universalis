@@ -32,6 +32,7 @@ public final class ArmySavedData extends SavedData {
     private final PackedArmyControllers controllers;
     private final PackedCommandState commands;
     private final PackedLogisticsState logistics;
+    private final PackedSettlementEconomyState settlementEconomy;
     private long armyRevision;
 
     public ArmySavedData() {
@@ -44,7 +45,8 @@ public final class ArmySavedData extends SavedData {
                 new PackedArmyControllers(),
                 0L,
                 new PackedCommandState(),
-                new PackedLogisticsState());
+                new PackedLogisticsState(),
+                new PackedSettlementEconomyState());
     }
 
     public ArmySavedData(PackedArmyEcs ecs, PackedCommandState commands) {
@@ -57,7 +59,8 @@ public final class ArmySavedData extends SavedData {
                 new PackedArmyControllers(),
                 0L,
                 commands,
-                new PackedLogisticsState());
+                new PackedLogisticsState(),
+                new PackedSettlementEconomyState());
     }
 
     public ArmySavedData(
@@ -70,6 +73,30 @@ public final class ArmySavedData extends SavedData {
             long armyRevision,
             PackedCommandState commands,
             PackedLogisticsState logistics) {
+        this(
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                new PackedSettlementEconomyState());
+    }
+
+    public ArmySavedData(
+            StableDimensionTable dimensions,
+            StableItemTable items,
+            PackedFactionState factions,
+            PackedArmyEcs ecs,
+            PackedUnitMembership memberships,
+            PackedArmyControllers controllers,
+            long armyRevision,
+            PackedCommandState commands,
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy) {
         if (dimensions == null
                 || items == null
                 || factions == null
@@ -77,7 +104,8 @@ public final class ArmySavedData extends SavedData {
                 || memberships == null
                 || controllers == null
                 || commands == null
-                || logistics == null) {
+                || logistics == null
+                || settlementEconomy == null) {
             throw new NullPointerException("Army SavedData stores");
         }
         if (armyRevision < 0L) {
@@ -92,6 +120,7 @@ public final class ArmySavedData extends SavedData {
         this.armyRevision = armyRevision;
         this.commands = commands;
         this.logistics = logistics;
+        this.settlementEconomy = settlementEconomy;
     }
 
     public static SavedData.Factory<ArmySavedData> factory() {
@@ -140,6 +169,10 @@ public final class ArmySavedData extends SavedData {
         return logistics;
     }
 
+    public PackedSettlementEconomyState settlementEconomy() {
+        return settlementEconomy;
+    }
+
     public long armyRevision() {
         return armyRevision;
     }
@@ -156,12 +189,27 @@ public final class ArmySavedData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         return ArmyNbtCodec.save(
-                tag, dimensions, items, factions, ecs, memberships, controllers, armyRevision, commands, logistics);
+                tag,
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                settlementEconomy);
     }
 
     public static ArmySavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         ArmyNbtCodec.LoadedState loaded = ArmyNbtCodec.load(
-                tag, maxFactionRelations(), ArmiesConfig.MAX_PENDING_ORDERS, ArmiesConfig.MAX_LOGISTICS_REQUESTS);
+                tag,
+                maxFactionRelations(),
+                ArmiesConfig.MAX_PENDING_ORDERS,
+                ArmiesConfig.MAX_LOGISTICS_REQUESTS,
+                ArmiesConfig.MAX_SETTLEMENTS,
+                ArmiesConfig.MAX_SETTLEMENT_SHIPMENTS);
         return new ArmySavedData(
                 loaded.dimensions(),
                 loaded.items(),
@@ -171,7 +219,8 @@ public final class ArmySavedData extends SavedData {
                 loaded.controllers(),
                 loaded.armyRevision(),
                 loaded.commands(),
-                loaded.logistics());
+                loaded.logistics(),
+                loaded.settlementEconomy());
     }
 
     private static StableDimensionTable defaultDimensions() {

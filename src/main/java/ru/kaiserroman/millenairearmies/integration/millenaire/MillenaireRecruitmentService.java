@@ -51,6 +51,7 @@ public final class MillenaireRecruitmentService {
     public static final long ARMY_LIMIT_REACHED = -38L;
     public static final long INVALID_COUNT = -39L;
     public static final long WRONG_DIMENSION = -40L;
+    public static final long SUPPLY_SHORTAGE = -41L;
 
     private static final int MAX_UNIT_ROWS = 1 << 20;
 
@@ -70,6 +71,7 @@ public final class MillenaireRecruitmentService {
     private PackedUnitMembership memberships;
     private RecruitmentRoster roster;
     private RecruitmentFactionPolicy factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
+    private RecruitmentSupplyPolicy supplyPolicy = RecruitmentSupplyPolicy.ALLOW_ALL;
 
     public MillenaireRecruitmentService(
             MillenaireVillageIndex villageIndex,
@@ -139,6 +141,7 @@ public final class MillenaireRecruitmentService {
         roster = null;
         factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
         clearCandidates();
+        supplyPolicy = RecruitmentSupplyPolicy.ALLOW_ALL;
     }
 
     public void installFactionPolicy(RecruitmentFactionPolicy installedPolicy) {
@@ -154,6 +157,13 @@ public final class MillenaireRecruitmentService {
         }
         requireServerThread();
         roster.releaseListener(Objects.requireNonNull(installedListener, "installedListener"));
+    }
+
+    public void installSupplyPolicy(RecruitmentSupplyPolicy installedPolicy) {
+        if (server != null) {
+            requireServerThread();
+        }
+        supplyPolicy = Objects.requireNonNull(installedPolicy, "installedPolicy");
     }
 
     /** Raises a new controlled army and atomically recruits {@code desiredUnits} nearest fighters. */
@@ -198,6 +208,11 @@ public final class MillenaireRecruitmentService {
             clearCandidates();
             return ledgerFailure(charged);
         }
+        if (!consumeRecruitmentKits(village, desiredUnits)) {
+            ledger.refund(level, village, charged);
+            clearCandidates();
+            return SUPPLY_SHORTAGE;
+        }
         long created = commandService.createArmyForVerifiedSettlementOwner(
                 authority,
                 faction,
@@ -205,6 +220,7 @@ public final class MillenaireRecruitmentService {
                 village.getCenter().asLong(),
                 level.dimension().location());
         if (created < 0L) {
+            refundRecruitmentKits(village, desiredUnits);
             ledger.refund(level, village, charged);
             clearCandidates();
             return creationFailure(created);
@@ -219,6 +235,7 @@ public final class MillenaireRecruitmentService {
                     candidatePositions[index]);
             if (recruited < 0L) {
                 roster.disband(authority, armyHandle);
+                refundRecruitmentKits(village, desiredUnits);
                 ledger.refund(level, village, charged);
                 clearCandidates();
                 return recruited;
@@ -270,6 +287,11 @@ public final class MillenaireRecruitmentService {
             clearCandidates();
             return ledgerFailure(charged);
         }
+        if (!consumeRecruitmentKits(village, requested)) {
+            ledger.refund(level, village, charged);
+            clearCandidates();
+            return SUPPLY_SHORTAGE;
+        }
         int committed = 0;
         for (; committed < requested; committed++) {
             long result = roster.recruit(
@@ -282,6 +304,7 @@ public final class MillenaireRecruitmentService {
                 for (int rollback = committed - 1; rollback >= 0; rollback--) {
                     roster.release(authority, armyHandle, candidateMost[rollback], candidateLeast[rollback]);
                 }
+                refundRecruitmentKits(village, requested);
                 ledger.refund(level, village, charged);
                 clearCandidates();
                 return result;
@@ -335,6 +358,10 @@ public final class MillenaireRecruitmentService {
         if (charged < 0) {
             return ledgerFailure(charged);
         }
+        if (!consumeRecruitmentKits(village, 1)) {
+            ledger.refund(actorLevel, village, charged);
+            return SUPPLY_SHORTAGE;
+        }
         long recruited = roster.recruit(
                 authority,
                 armyHandle,
@@ -342,6 +369,7 @@ public final class MillenaireRecruitmentService {
                 uuid.getLeastSignificantBits(),
                 villager.blockPosition().asLong());
         if (recruited < 0L) {
+            refundRecruitmentKits(village, 1);
             ledger.refund(actorLevel, village, charged);
         }
         return recruited;
@@ -473,6 +501,20 @@ public final class MillenaireRecruitmentService {
             }
         }
         return best;
+    }
+
+    private boolean consumeRecruitmentKits(Village village, int count) {
+        VillageId id = village.getId();
+        UUID uuid = id.uuid();
+        return supplyPolicy.tryConsumeRecruitmentKits(
+                uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), count);
+    }
+
+    private void refundRecruitmentKits(Village village, int count) {
+        VillageId id = village.getId();
+        UUID uuid = id.uuid();
+        supplyPolicy.refundRecruitmentKits(
+                uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), count);
     }
 
     private long validateControlledSettlement(
