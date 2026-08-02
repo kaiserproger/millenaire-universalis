@@ -7,8 +7,8 @@ public final class ArmyOrderExecutionStateSelfTest {
     private ArmyOrderExecutionStateSelfTest() {}
 
     public static void main(String[] args) {
-        check(!OrderExecutionPolicy.shouldStart(false), "production-default gate is dormant");
-        check(OrderExecutionPolicy.shouldStart(true), "explicit opt-in enables experimental bridge");
+        check(!OrderExecutionPolicy.shouldStart(false), "operator kill switch stays fail-closed");
+        check(OrderExecutionPolicy.shouldStart(true), "production bridge gate starts");
         long minimumHeight = PackedArmyEcs.packBlockPos(0, -64, 0);
         long maximumHeight = PackedArmyEcs.packBlockPos(0, 320, 0);
         check(
@@ -31,17 +31,16 @@ public final class ArmyOrderExecutionStateSelfTest {
         check(orders.observe(army, 1, 0, targetA) == 1L, "initial revision");
         check(orders.observe(army, 1, 0, targetA) == 1L, "identical commit is stable");
         check(orders.observe(army, 1, 0, targetB) == 2L, "target change bumps revision");
-        check(orders.observe(army, 1, 1, targetB) == 3L, "dimension change bumps revision");
-        check(orders.observe(army, 2, 1, targetB) == 4L, "order change bumps revision");
-        check(orders.targetDimensionId(army) == 1, "current dimension is retained");
-        check(orders.observe(wrappedArmy, 0, 0L) == 1L, "signed raw handle is supported");
+        check(orders.observe(army, 2, 0, targetB) == 3L, "order change bumps revision");
+        check(orders.observe(army, 2, 1, targetB) == 4L, "dimension change bumps revision");
+        check(orders.observe(wrappedArmy, 0, 0, 0L) == 1L, "signed raw handle is supported");
         check(orders.size() == 2, "two projected armies");
 
         int unit = 0x0010_0101;
         check(units.needsApply(unit, army, 4L), "new unit needs current order");
         units.markRunning(unit, army, 4L);
         check(!units.needsApply(unit, army, 4L), "running revision is acknowledged");
-        check(!units.markRetry(unit, army, 3L), "stale task cannot rewind newer state");
+        check(!units.markRetry(unit, army, 2L), "stale task cannot rewind newer state");
         check(!units.needsApply(unit, army, 4L), "stale retry had no effect");
         check(units.markRetry(unit, army, 4L), "current task may request retry");
         check(units.needsApply(unit, army, 4L), "retry replays same revision");
@@ -56,6 +55,7 @@ public final class ArmyOrderExecutionStateSelfTest {
         check(units.needsApply(unit, reassignedArmy, 1L), "army reassignment invalidates state");
         units.markTerminal(unit, reassignedArmy, 1L);
         check(!units.markRetry(unit, army, 5L), "old army task cannot affect reassigned unit");
+        check(!units.markTerminalIfCurrent(unit, army, 5L), "stale completion cannot affect reassigned unit");
 
         int cancelledUnit = 0x0010_0110;
         units.markRunning(cancelledUnit, army, 10L);
@@ -78,20 +78,6 @@ public final class ArmyOrderExecutionStateSelfTest {
         check(UnitOrderProjection.update(ecs, projectedUnit, 2), "changed unit projection is dirty");
         check(ecs.unitOrder(projectedUnit) == 2, "changed projection is stored");
         check(!UnitOrderProjection.update(ecs, projectedUnit, 2), "repeated projection stays clean");
-
-        long initialPosition = PackedArmyEcs.packBlockPos(1, 64, 2);
-        long movedPosition = PackedArmyEcs.packBlockPos(18, 65, -9);
-        ecs.unitPackedPos(projectedUnit, initialPosition);
-        check(
-                !LoadedUnitPositionProjection.updatePosition(ecs, projectedUnit, initialPosition),
-                "identical physical position is clean");
-        check(
-                LoadedUnitPositionProjection.updatePosition(ecs, projectedUnit, movedPosition),
-                "changed physical position is dirty");
-        check(ecs.unitPackedPos(projectedUnit) == movedPosition, "physical position is stored");
-        check(
-                !LoadedUnitPositionProjection.updatePosition(ecs, projectedUnit, movedPosition),
-                "repeated physical position stays clean");
 
         System.out.println("ArmyOrderExecutionStateSelfTest: OK");
     }

@@ -10,6 +10,7 @@ import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionS
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
+import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 
 /** Cold command-screen projection; invoked only for an explicit client state request/action. */
 final class ServerArmyRosterProjection {
@@ -43,8 +44,7 @@ final class ServerArmyRosterProjection {
                 && settlementCount < ArmiesProtocol.MAX_CONTROLLED_SETTLEMENTS; ) {
             Village village = cursor.village();
             if (!eligibleVillage(village)
-                    || cursor.level() != player.serverLevel()
-                    || !near(player, village)
+                    || !village.isControlledBy(player.getUUID())
                     || factionRow(village) < 0) {
                 continue;
             }
@@ -66,8 +66,7 @@ final class ServerArmyRosterProjection {
             Village village = cursor.village();
             int factionRow = factionRow(village);
             if (!eligibleVillage(village)
-                    || cursor.level() != player.serverLevel()
-                    || !near(player, village)
+                    || !village.isControlledBy(player.getUUID())
                     || factionRow < 0) {
                 continue;
             }
@@ -77,8 +76,6 @@ final class ServerArmyRosterProjection {
             settlementInts[si + ArmyRosterSnapshotPayload.SETTLEMENT_FACTION] = factions.factionId(factionRow);
             settlementInts[si + ArmyRosterSnapshotPayload.SETTLEMENT_POPULATION] = livingPopulation(village);
             settlementInts[si + ArmyRosterSnapshotPayload.SETTLEMENT_AVAILABLE] = 0;
-            settlementInts[si + ArmyRosterSnapshotPayload.SETTLEMENT_CONTROLLED] =
-                    village.isControlledBy(player.getUUID()) ? 1 : 0;
             UUID villageId = village.getId().uuid();
             settlementLongs[sl + ArmyRosterSnapshotPayload.SETTLEMENT_UUID_MOST] =
                     villageId.getMostSignificantBits();
@@ -97,8 +94,11 @@ final class ServerArmyRosterProjection {
         final int projectedSettlementCount = settlementCount;
         if (recruitment != null) {
             recruitment.visitEligible(
-                    player,
-                    (villager, villageName, villageMost, villageLeast, distance, mode, cost, reputation) -> {
+                    ArmyCommandAuthority.player(
+                            player.getUUID(), player.hasPermissions(2)),
+                    player.serverLevel(),
+                    player.blockPosition(),
+                    (villager, villageName, villageMost, villageLeast, distance) -> {
                         int row = recruitCount[0];
                         if (row == ArmiesProtocol.MAX_AVAILABLE_RECRUITS) {
                             return;
@@ -109,9 +109,6 @@ final class ServerArmyRosterProjection {
                         int rs = row * ArmyRosterSnapshotPayload.RECRUIT_STRING_COLUMNS;
                         recruitInts[ri + ArmyRosterSnapshotPayload.RECRUIT_STRENGTH] =
                                 (int) Math.max(0.0D, villager.getAttackStrength());
-                        recruitInts[ri + ArmyRosterSnapshotPayload.RECRUIT_MODE] = mode;
-                        recruitInts[ri + ArmyRosterSnapshotPayload.RECRUIT_COST] = cost;
-                        recruitInts[ri + ArmyRosterSnapshotPayload.RECRUIT_REPUTATION] = reputation;
                         recruitLongs[rl + ArmyRosterSnapshotPayload.RECRUIT_UUID_MOST] =
                                 uuid.getMostSignificantBits();
                         recruitLongs[rl + ArmyRosterSnapshotPayload.RECRUIT_UUID_LEAST] =
@@ -183,13 +180,6 @@ final class ServerArmyRosterProjection {
             }
         }
         return count;
-    }
-
-    private static boolean near(ServerPlayer player, Village village) {
-        long dx = (long) player.blockPosition().getX() - village.getCenter().getX();
-        long dy = (long) player.blockPosition().getY() - village.getCenter().getY();
-        long dz = (long) player.blockPosition().getZ() - village.getCenter().getZ();
-        return dx * dx + dy * dy + dz * dz <= 128L * 128L;
     }
 
     private static boolean eligibleVillage(Village village) {

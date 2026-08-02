@@ -273,18 +273,13 @@ public final class FactionProjectionService
     /** Allocation-free recruitment policy backed by the already reconciled village index. */
     @Override
     public boolean villageBelongsToFaction(int armyFactionId, long villageUuidMost, long villageUuidLeast) {
-        Village village = villageIndex.find(villageUuidMost, villageUuidLeast);
-        if (village == null) {
-            return false;
-        }
-        int row = findCultureRow(village.getCultureId());
-        return row >= 0 && factionIds[row] == armyFactionId;
+        return factionForVillage(villageUuidMost, villageUuidLeast) == armyFactionId;
     }
 
     @Override
     public int factionForVillage(long villageUuidMost, long villageUuidLeast) {
         Village village = villageIndex.find(villageUuidMost, villageUuidLeast);
-        if (village == null) {
+        if (village == null || village.getCultureId() == null) {
             return -1;
         }
         int row = findCultureRow(village.getCultureId());
@@ -294,7 +289,8 @@ public final class FactionProjectionService
     private int collectCultures(MillenaireVillageIndex villageIndex) {
         int count = 0;
         for (villageCursor.reset(); villageCursor.advance(); ) {
-            ResourceLocation culture = villageCursor.village().getCultureId();
+            Village village = villageCursor.village();
+            ResourceLocation culture = village == null ? null : village.getCultureId();
             if (culture == null || containsCulture(cultureScratch, count, culture)) {
                 continue;
             }
@@ -309,6 +305,10 @@ public final class FactionProjectionService
     private void aggregateSettlements(MillenaireVillageIndex villageIndex) {
         for (villageCursor.reset(); villageCursor.advance(); ) {
             Village village = villageCursor.village();
+            if (village == null || village.getCultureId() == null || village.getId() == null
+                    || village.getId().uuid() == null || village.getCenter() == null) {
+                continue;
+            }
             int row = findCultureRow(village.getCultureId());
             if (row < 0) {
                 continue;

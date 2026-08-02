@@ -9,8 +9,8 @@ import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
 
 /** Primitive-array NBT codec. All object allocation is confined to the cold save/load boundary. */
 final class ArmyNbtCodec {
-    static final int SCHEMA_VERSION = 3;
-    private static final int MIN_SUPPORTED_SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 2;
+    private static final int LEGACY_SCHEMA_VERSION = 1;
 
     private static final int MAX_ECS_ROWS = 1 << 20;
     private static final int NO_ARMY_ROW = -1;
@@ -86,10 +86,6 @@ final class ArmyNbtCodec {
         int[] armyStates = new int[armyCount];
         int[] armyTargetDimensions = new int[armyCount];
         long[] armyTargets = new long[armyCount];
-        long[] armyHomeVillageMost = new long[armyCount];
-        long[] armyHomeVillageLeast = new long[armyCount];
-        long[] armyTargetVillageMost = new long[armyCount];
-        long[] armyTargetVillageLeast = new long[armyCount];
         IntIntTable armyRows = new IntIntTable(armyCount);
 
         PackedArmyEcs.ArmyCursor armyCursor = ecs.newArmyCursor();
@@ -100,12 +96,10 @@ final class ArmyNbtCodec {
             armyOrders[row] = armyCursor.order();
             armyStates[row] = armyCursor.state();
             armyTargetDimensions[row] = armyCursor.targetDimension();
-            requireDimensionId(dimensions, armyTargetDimensions[row], "army");
+            if (armyTargetDimensions[row] != PackedArmyEcs.UNKNOWN_DIMENSION) {
+                requireDimensionId(dimensions, armyTargetDimensions[row], "army target");
+            }
             armyTargets[row] = armyCursor.packedTargetPos();
-            armyHomeVillageMost[row] = armyCursor.homeVillageMost();
-            armyHomeVillageLeast[row] = armyCursor.homeVillageLeast();
-            armyTargetVillageMost[row] = armyCursor.targetVillageMost();
-            armyTargetVillageLeast[row] = armyCursor.targetVillageLeast();
             armyRows.put(handle, row);
         }
 
@@ -117,10 +111,6 @@ final class ArmyNbtCodec {
         armyTag.putIntArray("States", armyStates);
         armyTag.putIntArray("TargetDimensions", armyTargetDimensions);
         armyTag.putLongArray("Targets", armyTargets);
-        armyTag.putLongArray("HomeVillageMost", armyHomeVillageMost);
-        armyTag.putLongArray("HomeVillageLeast", armyHomeVillageLeast);
-        armyTag.putLongArray("TargetVillageMost", armyTargetVillageMost);
-        armyTag.putLongArray("TargetVillageLeast", armyTargetVillageLeast);
         root.put(TAG_ARMIES, armyTag);
 
         int controllerCount = controllers.size();
@@ -302,10 +292,10 @@ final class ArmyNbtCodec {
             int maxSettlements,
             int maxSettlementShipments) {
         int schemaVersion = root.getInt(TAG_SCHEMA_VERSION);
-        if (schemaVersion < MIN_SUPPORTED_SCHEMA_VERSION || schemaVersion > SCHEMA_VERSION) {
+        if (schemaVersion != LEGACY_SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION) {
             throw new IllegalArgumentException(
                     "Unsupported Millenaire Armies save schema " + schemaVersion
-                            + "; supported " + MIN_SUPPORTED_SCHEMA_VERSION + ".." + SCHEMA_VERSION);
+                            + "; expected " + LEGACY_SCHEMA_VERSION + " or " + SCHEMA_VERSION);
         }
 
         ListTag dimensionNames = root.getList(TAG_DIMENSIONS, Tag.TAG_STRING);
@@ -364,22 +354,15 @@ final class ArmyNbtCodec {
         int[] armyFactions = requiredIntArray(armyTag, "Factions", armyCount, TAG_ARMIES);
         int[] armyOrders = requiredIntArray(armyTag, "Orders", armyCount, TAG_ARMIES);
         int[] armyStates = requiredIntArray(armyTag, "States", armyCount, TAG_ARMIES);
-        int[] armyTargetDimensions = schemaVersion >= 2
-                ? requiredIntArray(armyTag, "TargetDimensions", armyCount, TAG_ARMIES)
-                : new int[armyCount];
+        int[] armyTargetDimensions;
+        if (schemaVersion >= 2) {
+            armyTargetDimensions = requiredIntArray(
+                    armyTag, "TargetDimensions", armyCount, TAG_ARMIES);
+        } else {
+            armyTargetDimensions = new int[armyCount];
+            java.util.Arrays.fill(armyTargetDimensions, PackedArmyEcs.UNKNOWN_DIMENSION);
+        }
         long[] armyTargets = requiredLongArray(armyTag, "Targets", armyCount, TAG_ARMIES);
-        long[] armyHomeVillageMost = schemaVersion >= 3
-                ? requiredLongArray(armyTag, "HomeVillageMost", armyCount, TAG_ARMIES)
-                : new long[armyCount];
-        long[] armyHomeVillageLeast = schemaVersion >= 3
-                ? requiredLongArray(armyTag, "HomeVillageLeast", armyCount, TAG_ARMIES)
-                : new long[armyCount];
-        long[] armyTargetVillageMost = schemaVersion >= 3
-                ? requiredLongArray(armyTag, "TargetVillageMost", armyCount, TAG_ARMIES)
-                : new long[armyCount];
-        long[] armyTargetVillageLeast = schemaVersion >= 3
-                ? requiredLongArray(armyTag, "TargetVillageLeast", armyCount, TAG_ARMIES)
-                : new long[armyCount];
 
         CompoundTag unitTag = root.getCompound(TAG_UNITS);
         int unitCount = checkedCount(unitTag, TAG_UNITS, MAX_ECS_ROWS);
@@ -393,26 +376,18 @@ final class ArmyNbtCodec {
 
         PackedArmyEcs ecs = new PackedArmyEcs(armyCount, unitCount);
         PackedUnitMembership memberships = new PackedUnitMembership();
-        if (memberships.usesPrimitiveIndex()) {
-            memberships.reserve(unitCount);
-        }
         int[] restoredArmyHandles = new int[armyCount];
         for (int armyRow = 0; armyRow < armyCount; armyRow++) {
-            requireDimensionId(dimensions, armyTargetDimensions[armyRow], "army");
+            int targetDimension = armyTargetDimensions[armyRow];
+            if (targetDimension != PackedArmyEcs.UNKNOWN_DIMENSION) {
+                requireDimensionId(dimensions, targetDimension, "army target");
+            }
             restoredArmyHandles[armyRow] = ecs.createArmy(
                     armyFactions[armyRow],
                     armyOrders[armyRow],
                     armyStates[armyRow],
-                    armyTargetDimensions[armyRow],
+                    targetDimension,
                     armyTargets[armyRow]);
-            ecs.armyHomeVillage(
-                    restoredArmyHandles[armyRow],
-                    armyHomeVillageMost[armyRow],
-                    armyHomeVillageLeast[armyRow]);
-            ecs.armyTargetVillage(
-                    restoredArmyHandles[armyRow],
-                    armyTargetVillageMost[armyRow],
-                    armyTargetVillageLeast[armyRow]);
         }
 
         CompoundTag controllerTag = root.getCompound(TAG_CONTROLLERS);

@@ -15,17 +15,28 @@ import org.millenaire.village.VillageId;
  */
 public final class MillenaireEntityBridge {
     private static final int MIN_CAPACITY = 32;
+    private static final int TOMBSTONE = -1;
 
     private MillVillager[] villagers = new MillVillager[MIN_CAPACITY];
     private Village[] villages = new Village[MIN_CAPACITY];
+    private long[] indexMost = new long[64];
+    private long[] indexLeast = new long[64];
+    /** Dense entity slot + 1; zero is empty and {@value #TOMBSTONE} is deleted. */
+    private int[] indexSlots = new int[64];
+    private int indexEntries;
+    private int indexTombstones;
     private int size;
     private int unresolved;
 
     /** Returns true when the villager already has a village binding. */
     public boolean onJoin(MillVillager villager, ServerLevel level, MillenaireVillageIndex index) {
-        int existing = indexOf(villager);
+        long most = villager.getUUID().getMostSignificantBits();
+        long least = villager.getUUID().getLeastSignificantBits();
+        int existing = indexOfUuid(most, least);
         Village village = resolve(villager, level, index);
         if (existing >= 0) {
+            // Chunk reload can publish the replacement instance before the old leave callback.
+            villagers[existing] = villager;
             villages[existing] = village;
             recountUnresolved();
             return village != null;
@@ -34,6 +45,7 @@ public final class MillenaireEntityBridge {
         ensureCapacity(size + 1);
         villagers[size] = villager;
         villages[size] = village;
+        insertIndex(most, least, size);
         size++;
         if (village == null) {
             unresolved++;
@@ -42,8 +54,10 @@ public final class MillenaireEntityBridge {
     }
 
     public boolean onLeave(MillVillager villager) {
-        int slot = indexOf(villager);
-        if (slot < 0) {
+        int slot = indexOfUuid(
+                villager.getUUID().getMostSignificantBits(),
+                villager.getUUID().getLeastSignificantBits());
+        if (slot < 0 || villagers[slot] != villager) {
             return false;
         }
         removeAt(slot);
@@ -81,49 +95,15 @@ public final class MillenaireEntityBridge {
     }
 
     public MillVillager findLoaded(long uuidMost, long uuidLeast) {
-        for (int slot = 0; slot < size; slot++) {
-            MillVillager villager = villagers[slot];
-            if (villager.getUUID().getMostSignificantBits() == uuidMost
-                    && villager.getUUID().getLeastSignificantBits() == uuidLeast) {
-                return villager;
-            }
-        }
-        return null;
-    }
-
-    /** Cold explicit-UI traversal over already loaded entities; never loads a chunk or record. */
-    public int visitLoaded(LoadedVillagerVisitor visitor) {
-        int visited = 0;
-        for (int slot = 0; slot < size; slot++) {
-            MillVillager villager = villagers[slot];
-            Village village = villages[slot];
-            if (villager == null || villager.isRemoved() || village == null) {
-                continue;
-            }
-            visitor.accept(villager, village);
-            visited++;
-        }
-        return visited;
+        int slot = indexOfUuid(uuidMost, uuidLeast);
+        MillVillager villager = slot < 0 ? null : villagers[slot];
+        return villager == null || villager.isRemoved() || villager.getUUID() == null
+                ? null
+                : villager;
     }
 
     public int size() {
         return size;
-    }
-
-    /** Bounded server-thread projection access for retained execution systems. */
-    public MillVillager loadedVillagerAt(int row) {
-        if (row < 0 || row >= size) {
-            throw new IndexOutOfBoundsException("Loaded villager row " + row + " outside 0.." + size);
-        }
-        return villagers[row];
-    }
-
-    /** Village paired with {@link #loadedVillagerAt}; may be null until reconciliation. */
-    public Village loadedVillageAt(int row) {
-        if (row < 0 || row >= size) {
-            throw new IndexOutOfBoundsException("Loaded villager row " + row + " outside 0.." + size);
-        }
-        return villages[row];
     }
 
     public int unresolvedCount() {
@@ -133,14 +113,17 @@ public final class MillenaireEntityBridge {
     public void clear() {
         Arrays.fill(villagers, 0, size, null);
         Arrays.fill(villages, 0, size, null);
+        Arrays.fill(indexSlots, 0);
         size = 0;
         unresolved = 0;
+        indexEntries = 0;
+        indexTombstones = 0;
     }
 
     private static Village resolve(
             MillVillager villager, ServerLevel eventLevel, MillenaireVillageIndex index) {
         VillageId villageId = villager.getVillageId();
-        if (villageId == null) {
+        if (villageId == null || villageId.uuid() == null) {
             return null;
         }
         Village village = index.find(villageId);
@@ -151,15 +134,17 @@ public final class MillenaireEntityBridge {
     }
 
     private int indexOf(MillVillager villager) {
-        for (int slot = 0; slot < size; slot++) {
-            if (villagers[slot] == villager) {
-                return slot;
-            }
-        }
-        return -1;
+        int slot = indexOfUuid(
+                villager.getUUID().getMostSignificantBits(),
+                villager.getUUID().getLeastSignificantBits());
+        return slot >= 0 && villagers[slot] == villager ? slot : -1;
     }
 
     private void removeAt(int slot) {
+        MillVillager removed = villagers[slot];
+        removeIndex(
+                removed.getUUID().getMostSignificantBits(),
+                removed.getUUID().getLeastSignificantBits());
         if (villages[slot] == null) {
             unresolved--;
         }
@@ -167,6 +152,11 @@ public final class MillenaireEntityBridge {
         if (slot != last) {
             villagers[slot] = villagers[last];
             villages[slot] = villages[last];
+            MillVillager moved = villagers[slot];
+            updateIndexSlot(
+                    moved.getUUID().getMostSignificantBits(),
+                    moved.getUUID().getLeastSignificantBits(),
+                    slot);
         }
         villagers[last] = null;
         villages[last] = null;
@@ -191,8 +181,102 @@ public final class MillenaireEntityBridge {
         villages = Arrays.copyOf(villages, capacity);
     }
 
-    @FunctionalInterface
-    public interface LoadedVillagerVisitor {
-        void accept(MillVillager villager, Village village);
+    private int indexOfUuid(long most, long least) {
+        int mask = indexSlots.length - 1;
+        int bucket = mix(most, least) & mask;
+        while (indexSlots[bucket] != 0) {
+            if (indexSlots[bucket] > 0
+                    && indexMost[bucket] == most
+                    && indexLeast[bucket] == least) {
+                return indexSlots[bucket] - 1;
+            }
+            bucket = bucket + 1 & mask;
+        }
+        return -1;
+    }
+
+    private void insertIndex(long most, long least, int denseSlot) {
+        ensureIndexCapacity();
+        int mask = indexSlots.length - 1;
+        int bucket = mix(most, least) & mask;
+        int firstTombstone = -1;
+        while (indexSlots[bucket] != 0) {
+            if (indexSlots[bucket] == TOMBSTONE && firstTombstone < 0) {
+                firstTombstone = bucket;
+            }
+            bucket = bucket + 1 & mask;
+        }
+        if (firstTombstone >= 0) {
+            bucket = firstTombstone;
+            indexTombstones--;
+        }
+        indexMost[bucket] = most;
+        indexLeast[bucket] = least;
+        indexSlots[bucket] = denseSlot + 1;
+        indexEntries++;
+    }
+
+    private void removeIndex(long most, long least) {
+        int bucket = indexBucket(most, least);
+        if (bucket < 0) {
+            return;
+        }
+        indexSlots[bucket] = TOMBSTONE;
+        indexEntries--;
+        indexTombstones++;
+    }
+
+    private void updateIndexSlot(long most, long least, int denseSlot) {
+        int bucket = indexBucket(most, least);
+        if (bucket < 0) {
+            throw new IllegalStateException("Loaded MillVillager UUID index lost a dense row");
+        }
+        indexSlots[bucket] = denseSlot + 1;
+    }
+
+    private int indexBucket(long most, long least) {
+        int mask = indexSlots.length - 1;
+        int bucket = mix(most, least) & mask;
+        while (indexSlots[bucket] != 0) {
+            if (indexSlots[bucket] > 0
+                    && indexMost[bucket] == most
+                    && indexLeast[bucket] == least) {
+                return bucket;
+            }
+            bucket = bucket + 1 & mask;
+        }
+        return -1;
+    }
+
+    private void ensureIndexCapacity() {
+        if ((indexEntries + indexTombstones + 1) * 2 < indexSlots.length) {
+            return;
+        }
+        int requested = indexTombstones > indexEntries ? indexSlots.length : indexSlots.length << 1;
+        rehash(requested);
+    }
+
+    private void rehash(int capacity) {
+        long[] oldMost = indexMost;
+        long[] oldLeast = indexLeast;
+        int[] oldSlots = indexSlots;
+        indexMost = new long[capacity];
+        indexLeast = new long[capacity];
+        indexSlots = new int[capacity];
+        indexEntries = 0;
+        indexTombstones = 0;
+        for (int bucket = 0; bucket < oldSlots.length; bucket++) {
+            if (oldSlots[bucket] > 0) {
+                insertIndex(oldMost[bucket], oldLeast[bucket], oldSlots[bucket] - 1);
+            }
+        }
+    }
+
+    private static int mix(long most, long least) {
+        long value = most ^ Long.rotateLeft(least, 29);
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        return (int) (value ^ value >>> 32);
     }
 }

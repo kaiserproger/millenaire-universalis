@@ -102,7 +102,9 @@ public final class ArmyClientEvents {
             }
             if (event.getNewScreen() instanceof ControlledMilitaryScreen
                     && Minecraft.getInstance().player != null) {
-                event.setNewScreen(new MillenaireCommandScreen());
+                Minecraft.getInstance().player.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable(
+                                "gui.millenaire_armies.entry.controlled_military"), false);
             }
         }
 

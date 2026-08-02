@@ -11,10 +11,7 @@ import ru.kaiserroman.millenairearmies.network.ArmyStateSnapshotPayload;
 import ru.kaiserroman.millenairearmies.network.ArmyRosterSnapshotPayload;
 import ru.kaiserroman.millenairearmies.network.FactionMetadataPayload;
 import ru.kaiserroman.millenairearmies.network.IssueOrderIntent;
-import ru.kaiserroman.millenairearmies.network.HireRecruitIntent;
 import ru.kaiserroman.millenairearmies.network.RecruitUnitsIntent;
-import ru.kaiserroman.millenairearmies.network.RealmActionIntent;
-import ru.kaiserroman.millenairearmies.network.RealmStatePayload;
 
 /** Run directly with the NeoForge development classpath; no test framework required. */
 public final class NetworkStateSelfTest {
@@ -25,48 +22,9 @@ public final class NetworkStateSelfTest {
         snapshotCodecAndMirrorRoundTrip();
         factionMetadataCodecAndMirrorRoundTrip();
         rosterAndRecruitmentCodecRoundTrip();
-        realmCodecAndMirrorRoundTrip();
         deltasUpdateWithoutObjectRowsAndDetectGaps();
         protocolBoundsAreEnforced();
         System.out.println("Armies network/client-state self-test passed");
-    }
-
-    private static void realmCodecAndMirrorRoundTrip() {
-        RealmStatePayload source = new RealmStatePayload(
-                9L,
-                4,
-                RealmActionIntent.ACTION_SET_TAX,
-                ArmiesProtocol.RESULT_ACCEPTED,
-                true,
-                "Norman March",
-                "Caen",
-                15,
-                420L,
-                3,
-                87,
-                2,
-                640,
-                48,
-                32,
-                96);
-        RealmStatePayload decoded = roundTrip(RealmStatePayload.STREAM_CODEC, source);
-        check(decoded.realmRevision() == 9L
-                        && decoded.taxRate() == 15
-                        && decoded.treasury() == 420L
-                        && "Norman March".equals(decoded.name()),
-                "realm state codec round-trip");
-
-        ClientRealmState state = new ClientRealmState();
-        check(state.apply(decoded), "realm state applied");
-        check(!state.apply(new RealmStatePayload(
-                        8L, 5, RealmActionIntent.ACTION_SET_TAX, ArmiesProtocol.RESULT_ACCEPTED,
-                        true, "Old", "Caen", 10, 0L, 1, 1, 0, 0, 0, 0, 0)),
-                "older realm revision rejected");
-        RealmActionIntent intent = roundTrip(
-                RealmActionIntent.STREAM_CODEC,
-                new RealmActionIntent(6, RealmActionIntent.ACTION_FOUND, 11L, 12L, 10, 20L, 0L));
-        check(intent.capitalVillageLeast() == 12L && intent.expectedArmyRevision() == 20L,
-                "realm action codec round-trip");
     }
 
     private static void rosterAndRecruitmentCodecRoundTrip() {
@@ -78,19 +36,16 @@ public final class NetworkStateSelfTest {
                 1,
                 1,
                 1,
-                new int[] {7, 25, 1, 1},
+                new int[] {7, 25, 1},
                 new long[] {11L, 12L, 99L},
                 new String[] {"Caen", "millenaire:norman"},
-                new int[] {18, ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRE_AVAILABLE, 32, 5_000},
+                new int[] {18},
                 new long[] {21L, 22L, 11L, 12L},
                 new String[] {"Agnès Martin", "Guard"});
         ArmyRosterSnapshotPayload decoded = roundTrip(ArmyRosterSnapshotPayload.STREAM_CODEC, roster);
         check(decoded.recruitCount() == 1
                         && "Agnès Martin".equals(decoded.recruitString(0, ArmyRosterSnapshotPayload.RECRUIT_NAME)),
                 "bounded roster UTF-8 round-trip");
-        check(decoded.settlementInt(0, ArmyRosterSnapshotPayload.SETTLEMENT_CONTROLLED) == 1
-                        && decoded.recruitInt(0, ArmyRosterSnapshotPayload.RECRUIT_COST) == 32,
-                "hire/control metadata round-trip");
 
         RecruitUnitsIntent intent = new RecruitUnitsIntent(
                 4, 0x8000_002a, 11L, 12L, 14L, 1, new long[] {21L, 22L});
@@ -103,11 +58,6 @@ public final class NetworkStateSelfTest {
                         ArmiesProtocol.MAX_RECRUITS_PER_INTENT + 1,
                         new long[(ArmiesProtocol.MAX_RECRUITS_PER_INTENT + 1) * 2]),
                 "oversized recruit selection rejected");
-
-        HireRecruitIntent hire = roundTrip(
-                HireRecruitIntent.STREAM_CODEC, new HireRecruitIntent(5, 21L, 22L, 14L));
-        check(hire.villagerUuidLeast() == 22L && hire.expectedRevision() == 14L,
-                "bounded hire intent round-trip");
     }
 
     private static void factionMetadataCodecAndMirrorRoundTrip() {

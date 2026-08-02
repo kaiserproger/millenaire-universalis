@@ -26,6 +26,21 @@ public final class StableDimensionTable {
         return ResourceLocation.parse(names[id]);
     }
 
+    /** Allocation-free hot-path comparison against a runtime level dimension name. */
+    public boolean matches(int id, ResourceLocation name) {
+        if (id < 0 || id >= size || name == null) {
+            return false;
+        }
+        String canonical = names[id];
+        String namespace = name.getNamespace();
+        String path = name.getPath();
+        int separator = canonical.indexOf(':');
+        return separator == namespace.length()
+                && canonical.length() == separator + 1 + path.length()
+                && canonical.regionMatches(0, namespace, 0, namespace.length())
+                && canonical.regionMatches(separator + 1, path, 0, path.length());
+    }
+
     String nameString(int id) {
         if (id < 0 || id >= size) {
             throw new IllegalArgumentException("Unknown dimension dictionary id " + id);

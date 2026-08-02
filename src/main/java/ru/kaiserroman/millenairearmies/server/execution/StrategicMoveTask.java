@@ -15,7 +15,7 @@ import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
  * A one-shot public-API Millenaire task that owns navigation only until arrival or abandonment.
  * It contains no pathfinder, target finder, or combat behavior of its own.
  */
-final class StrategicMoveTask extends ProgressAwareTask implements StrategicRetainedTask {
+final class StrategicMoveTask extends ProgressAwareTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
             SarvarMillenaireArmies.MOD_ID, "strategic_move");
     private static final Component LABEL = Component.translatable(
@@ -26,6 +26,7 @@ final class StrategicMoveTask extends ProgressAwareTask implements StrategicReta
     private static final double PROGRESS_DISTANCE_SQ = 1.0D;
 
     private final PackedUnitExecutionState executionState;
+    private final OrderExecutionTelemetry telemetry;
     private final int unitHandle;
     private int armyHandle;
     private long revision;
@@ -40,9 +41,14 @@ final class StrategicMoveTask extends ProgressAwareTask implements StrategicReta
     private double sampleY;
     private double sampleZ;
     private boolean sampled;
+    private int retargetCooldown;
 
-    StrategicMoveTask(PackedUnitExecutionState executionState, int unitHandle) {
+    StrategicMoveTask(
+            PackedUnitExecutionState executionState,
+            OrderExecutionTelemetry telemetry,
+            int unitHandle) {
         this.executionState = executionState;
+        this.telemetry = telemetry;
         this.unitHandle = unitHandle;
     }
 
@@ -61,26 +67,23 @@ final class StrategicMoveTask extends ProgressAwareTask implements StrategicReta
         sampleY = 0.0D;
         sampleZ = 0.0D;
         sampled = false;
+        retargetCooldown = 0;
     }
 
-    @Override
-    public int unitHandle() {
+    int unitHandle() {
         return unitHandle;
     }
 
-    @Override
-    public int armyHandle() {
+    int armyHandle() {
         return armyHandle;
     }
 
-    @Override
-    public long revision() {
+    long revision() {
         return revision;
     }
 
     /** Allocation-free cancellation observed by GoalScheduler on the next normal entity tick. */
-    @Override
-    public boolean cancel() {
+    boolean cancel() {
         if (finished) {
             return false;
         }
@@ -104,26 +107,32 @@ final class StrategicMoveTask extends ProgressAwareTask implements StrategicReta
                 || context.village() != null && context.village().isUnderAttack()) {
             executionState.markRetry(unitHandle, armyHandle, revision);
             finished = true;
-            navigation.stop(villager);
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
 
-        if (navigation.getDestination() == null) {
-            navigation.navigateTo(villager, target, WALK_SPEED);
+        int previousRetargetCooldown = retargetCooldown;
+        retargetCooldown = BoundedNavigationDelegation.retarget(
+                navigation, villager, target, WALK_SPEED, retargetCooldown);
+        if (retargetCooldown > previousRetargetCooldown) {
             reportProgress();
         }
         if (navigation.isArrivedSameFloor(villager, ARRIVE_DISTANCE)) {
             terminal = true;
             finished = true;
-            executionState.markArrivedIfCurrent(unitHandle, armyHandle, revision);
-            navigation.stop(villager);
+            if (executionState.markArrivedIfCurrent(unitHandle, armyHandle, revision)) {
+                telemetry.arrived();
+            }
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
         if (navigation.isAbandoned()) {
             terminal = true;
             finished = true;
-            executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision);
-            navigation.stop(villager);
+            if (executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision)) {
+                telemetry.blocked();
+            }
+            BoundedNavigationDelegation.stop(navigation, villager);
             return;
         }
 
@@ -156,12 +165,15 @@ final class StrategicMoveTask extends ProgressAwareTask implements StrategicReta
     @Override
     public void stop(GoalContext context, StopReason reason) {
         if (context != null) {
-            context.villager().getNavManager().stop(context.villager());
+            BoundedNavigationDelegation.stop(
+                    context.villager().getNavManager(), context.villager());
         }
         if (!terminal && !cancelled) {
             if (reason == StopReason.IMPOSSIBLE) {
                 terminal = true;
-                executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision);
+                if (executionState.markBlockedIfCurrent(unitHandle, armyHandle, revision)) {
+                    telemetry.blocked();
+                }
             } else {
                 executionState.markRetry(unitHandle, armyHandle, revision);
             }

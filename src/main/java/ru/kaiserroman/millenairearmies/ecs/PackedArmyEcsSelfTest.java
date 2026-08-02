@@ -29,8 +29,8 @@ public final class PackedArmyEcsSelfTest {
 
     private static void handlesAndSwapRemoveStayConsistent() {
         PackedArmyEcs ecs = new PackedArmyEcs(4, 8);
-        int red = ecs.createArmy(10, 1, 2, PackedArmyEcs.packBlockPos(1, 64, 2));
-        int blue = ecs.createArmy(20, 3, 4, PackedArmyEcs.packBlockPos(3, 65, 4));
+        int red = ecs.createArmy(10, 1, 2, 0, PackedArmyEcs.packBlockPos(1, 64, 2));
+        int blue = ecs.createArmy(20, 3, 4, 1, PackedArmyEcs.packBlockPos(3, 65, 4));
         int first = ecs.createUnit(red, 11, 21, PackedArmyEcs.packBlockPos(5, 66, 6));
         int middle = ecs.createUnit(red, 12, 22, PackedArmyEcs.packBlockPos(7, 67, 8));
         int last = ecs.createUnit(blue, 13, 23, PackedArmyEcs.packBlockPos(9, 68, 10));
@@ -56,6 +56,7 @@ public final class PackedArmyEcsSelfTest {
         check(ecs.unitArmy(last) == PackedArmyEcs.NO_ARMY, "last unit unassigned");
         check(ecs.unitArmy(replacement) == PackedArmyEcs.NO_ARMY, "replacement unit unassigned");
         ecs.checkInvariants();
+        check(ecs.armyTargetDimension(red) == 0, "surviving army retained target dimension");
     }
 
     private static void cursorsAndSnapshotsAreReusable() {

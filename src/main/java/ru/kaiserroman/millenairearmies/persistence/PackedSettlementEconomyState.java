@@ -11,10 +11,6 @@ import net.minecraft.nbt.CompoundTag;
  * transitions, so replaying a tick after a save or crash cannot mint or delete commodities.</p>
  */
 public final class PackedSettlementEconomyState {
-    public static final int FOOD = 0;
-    public static final int IRON = 1;
-    public static final int LEATHER = 2;
-    public static final int ARROWS = 3;
     public static final int COMMODITY_COUNT = 4;
     public static final byte SHIPMENT_IN_TRANSIT = 1;
     public static final byte SHIPMENT_DELIVERED = 2;

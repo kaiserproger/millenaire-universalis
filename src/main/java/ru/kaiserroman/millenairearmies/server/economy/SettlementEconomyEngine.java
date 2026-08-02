@@ -384,17 +384,18 @@ public final class SettlementEconomyEngine
     @Override
     public boolean tryConsumeRecruitmentKits(long villageMost, long villageLeast, int count) {
         requireOwnerThread();
-        if (count <= 0) return false;
         int row = state.findSettlement(villageMost, villageLeast);
-        if (row < 0 || !state.activeAt(row) || !projectionReady) return false;
+        if (row < 0 || !state.activeAt(row) || !projectionReady || count <= 0) return false;
         for (int commodity = 0; commodity < RECRUITMENT_COST.length; commodity++) {
-            long required = (long) RECRUITMENT_COST[commodity] * count;
-            if ((long) state.stockAt(row, commodity) - required
-                    < state.reserveAt(row, commodity)) return false;
+            long amount = (long) RECRUITMENT_COST[commodity] * count;
+            if (amount > Integer.MAX_VALUE
+                    || (long) state.stockAt(row, commodity) - amount < state.reserveAt(row, commodity)) {
+                return false;
+            }
         }
         for (int commodity = 0; commodity < RECRUITMENT_COST.length; commodity++) {
-            int required = Math.multiplyExact(RECRUITMENT_COST[commodity], count);
-            if (!state.tryDebit(row, commodity, required)) {
+            int amount = RECRUITMENT_COST[commodity] * count;
+            if (!state.tryDebit(row, commodity, amount)) {
                 throw new IllegalStateException("Recruitment kit preflight/commit mismatch");
             }
         }
@@ -405,13 +406,12 @@ public final class SettlementEconomyEngine
     @Override
     public void refundRecruitmentKits(long villageMost, long villageLeast, int count) {
         requireOwnerThread();
-        if (count <= 0) return;
         int row = state.findSettlement(villageMost, villageLeast);
-        if (row < 0) {
-            throw new IllegalStateException("Recruitment kit refund references an unknown settlement");
+        if (row < 0 || count <= 0) {
+            throw new IllegalStateException("Recruitment kit refund lost its settlement");
         }
         for (int commodity = 0; commodity < RECRUITMENT_COST.length; commodity++) {
-            state.credit(row, commodity, Math.multiplyExact(RECRUITMENT_COST[commodity], count));
+            state.credit(row, commodity, RECRUITMENT_COST[commodity] * count);
         }
         dirtyMarker.run();
     }

@@ -27,32 +27,22 @@ public record ArmyRosterSnapshotPayload(
         long[] recruitLongs,
         String[] recruitStrings)
         implements CustomPacketPayload {
-    public static final int SETTLEMENT_INT_COLUMNS = 4;
+    public static final int SETTLEMENT_INT_COLUMNS = 3;
     public static final int SETTLEMENT_LONG_COLUMNS = 3;
     public static final int SETTLEMENT_STRING_COLUMNS = 2;
     public static final int SETTLEMENT_FACTION = 0;
     public static final int SETTLEMENT_POPULATION = 1;
     public static final int SETTLEMENT_AVAILABLE = 2;
-    public static final int SETTLEMENT_CONTROLLED = 3;
     public static final int SETTLEMENT_UUID_MOST = 0;
     public static final int SETTLEMENT_UUID_LEAST = 1;
     public static final int SETTLEMENT_POSITION = 2;
     public static final int SETTLEMENT_NAME = 0;
     public static final int SETTLEMENT_CULTURE = 1;
 
-    public static final int RECRUIT_INT_COLUMNS = 4;
+    public static final int RECRUIT_INT_COLUMNS = 1;
     public static final int RECRUIT_LONG_COLUMNS = 4;
     public static final int RECRUIT_STRING_COLUMNS = 2;
     public static final int RECRUIT_STRENGTH = 0;
-    public static final int RECRUIT_MODE = 1;
-    public static final int RECRUIT_COST = 2;
-    public static final int RECRUIT_REPUTATION = 3;
-    public static final int RECRUIT_MODE_CONTROLLED = 0;
-    public static final int RECRUIT_MODE_HIRED = 1;
-    public static final int RECRUIT_MODE_HIRE_AVAILABLE = 2;
-    public static final int RECRUIT_MODE_REPUTATION_LOCKED = 3;
-    public static final int RECRUIT_MODE_FUNDS_LOCKED = 4;
-    public static final int RECRUIT_MODE_UNAVAILABLE = 5;
     public static final int RECRUIT_UUID_MOST = 0;
     public static final int RECRUIT_UUID_LEAST = 1;
     public static final int RECRUIT_VILLAGE_MOST = 2;
@@ -73,7 +63,7 @@ public record ArmyRosterSnapshotPayload(
             throw new IllegalArgumentException("Roster snapshot header values must be non-negative");
         }
         if (acknowledgementAction < ArmiesProtocol.ACTION_NONE
-                || acknowledgementAction > ArmiesProtocol.ACTION_HIRE
+                || acknowledgementAction > ArmiesProtocol.ACTION_ISSUE_ORDER
                 || acknowledgementResult < ArmiesProtocol.RESULT_NONE
                 || acknowledgementResult > ArmiesProtocol.RESULT_PARTIAL) {
             throw new IllegalArgumentException("Unknown roster acknowledgement code");

@@ -5,32 +5,29 @@ import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import org.millenaire.culture.ModCultures;
 import org.millenaire.culture.VillagerType;
 import org.millenaire.entity.MillVillager;
-import org.millenaire.hire.HiringHelper;
-import org.millenaire.item.MoneyHelper;
 import org.millenaire.village.Village;
 import org.millenaire.village.VillageId;
 import org.millenaire.village.VillagerRecord;
+import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
-import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
+import ru.kaiserroman.millenairearmies.persistence.PackedCommandState;
+import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
+import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
 
 /**
- * Server-authoritative membership layer for existing Millenaire villagers.
+ * Server-authoritative player flow for raising armies from controlled Millenaire settlements.
  *
- * <p>Recruitment creates only a packed ECS row and a persistent UUID association. It never creates
- * or replaces an entity, changes Millenaire goals, selects a target, runs pathfinding, or mutates
- * combat state. Loaded villagers keep their normal {@link MillVillager} implementation; unloaded
- * villagers are validated through Millenaire's public {@link VillagerRecord} API.</p>
- *
- * <p>This service has no tick method. Successful assignment/reassignment is allocation-free after
- * the ECS and membership columns have enough capacity. The explicit record path may allocate only
- * where Millenaire's public UUID-keyed map requires a caller-provided {@link UUID}.</p>
+ * <p>All world reads, inventory charges and packed mutations happen on the Minecraft server
+ * thread. A client supplies intent only: the server resolves the nearby village, derives its
+ * faction, checks exact Millenaire ownership/reputation, selects currently loaded adult fighters,
+ * and then charges the town hall before committing controller/membership rows. No entity is
+ * spawned, cloned, hired, teleported, targeted, or given combat/pathfinding behavior here.</p>
  */
 public final class MillenaireRecruitmentService {
     public static final long NOT_RUNNING = -20L;
@@ -44,27 +41,35 @@ public final class MillenaireRecruitmentService {
     public static final long UNIT_LIMIT_REACHED = -28L;
     public static final long SETTLEMENT_NOT_CONTROLLED = -29L;
     public static final long REPUTATION_TOO_LOW = -30L;
-    public static final long ARMY_LIMIT_REACHED = -31L;
+    public static final long ALREADY_RECRUITED = -31L;
     public static final long ARMY_FULL = -32L;
-    public static final long INVALID_COUNT = -33L;
-    public static final long SUPPLY_SHORTAGE = -34L;
-    public static final long HIRE_UNAVAILABLE = -35L;
-    public static final long MONEY_TOO_LOW = -36L;
+    public static final long VILLAGER_BUSY = -33L;
+    public static final long NOT_MILITARY = -34L;
+    public static final long LEDGER_UNAVAILABLE = -35L;
+    public static final long INSUFFICIENT_RESOURCES = -36L;
+    public static final long NOT_RECRUITED = -37L;
+    public static final long ARMY_LIMIT_REACHED = -38L;
+    public static final long INVALID_COUNT = -39L;
+    public static final long WRONG_DIMENSION = -40L;
+    public static final long SUPPLY_SHORTAGE = -41L;
 
     private static final int MAX_UNIT_ROWS = 1 << 20;
-    private static final long MAX_RECRUIT_DISTANCE_SQ = 128L * 128L;
-    private static final int INITIAL_UNIT_STATE = 0;
 
     private final MillenaireVillageIndex villageIndex;
     private final MillenaireVillageIndex.Cursor villageCursor;
     private final MillenaireEntityBridge entityBridge;
     private final ArmyCommandService commandService;
+    private final SettlementRecruitmentLedger ledger;
+    private final long[] candidateMost = new long[ArmiesConfig.MAX_UNITS_PER_ARMY];
+    private final long[] candidateLeast = new long[ArmiesConfig.MAX_UNITS_PER_ARMY];
+    private final long[] candidatePositions = new long[ArmiesConfig.MAX_UNITS_PER_ARMY];
+    private final long[] candidateDistances = new long[ArmiesConfig.MAX_UNITS_PER_ARMY];
+    private final MillVillager[] candidateEntities = new MillVillager[ArmiesConfig.MAX_UNITS_PER_ARMY];
 
     private MinecraftServer server;
     private PackedArmyEcs ecs;
-    private PackedArmyEcs.ArmyCursor armyCursor;
     private PackedUnitMembership memberships;
-    private ArmyCommandService.DirtyMarker dirtyMarker;
+    private RecruitmentRoster roster;
     private RecruitmentFactionPolicy factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
     private RecruitmentSupplyPolicy supplyPolicy = RecruitmentSupplyPolicy.ALLOW_ALL;
 
@@ -72,17 +77,27 @@ public final class MillenaireRecruitmentService {
             MillenaireVillageIndex villageIndex,
             MillenaireEntityBridge entityBridge,
             ArmyCommandService commandService) {
+        this(villageIndex, entityBridge, commandService, new MillenaireSettlementRecruitmentLedger());
+    }
+
+    public MillenaireRecruitmentService(
+            MillenaireVillageIndex villageIndex,
+            MillenaireEntityBridge entityBridge,
+            ArmyCommandService commandService,
+            SettlementRecruitmentLedger ledger) {
         this.villageIndex = Objects.requireNonNull(villageIndex, "villageIndex");
         this.villageCursor = villageIndex.newCursor();
         this.entityBridge = Objects.requireNonNull(entityBridge, "entityBridge");
         this.commandService = Objects.requireNonNull(commandService, "commandService");
+        this.ledger = Objects.requireNonNull(ledger, "ledger");
     }
 
-    /** Attaches the persisted stores. The faction policy is installed through a separate hook. */
     public boolean start(
             MinecraftServer startingServer,
             PackedArmyEcs persistedEcs,
             PackedUnitMembership persistedMemberships,
+            PackedCommandState persistedCommands,
+            PackedLogisticsState persistedLogistics,
             ArmyCommandService.DirtyMarker persistedDirtyMarker) {
         Objects.requireNonNull(startingServer, "startingServer");
         if (server == startingServer) {
@@ -93,354 +108,295 @@ public final class MillenaireRecruitmentService {
         }
         Objects.requireNonNull(persistedEcs, "persistedEcs");
         Objects.requireNonNull(persistedMemberships, "persistedMemberships");
+        Objects.requireNonNull(persistedCommands, "persistedCommands");
+        Objects.requireNonNull(persistedLogistics, "persistedLogistics");
         Objects.requireNonNull(persistedDirtyMarker, "persistedDirtyMarker");
-        if (!commandService.isRunning() || commandService.ecs() != persistedEcs) {
+        if (!commandService.isRunning() || commandService.ecs() != persistedEcs
+                || commandService.controllers() == null) {
             throw new IllegalStateException(
-                    "Army command service must own the same persisted ECS before recruitment starts");
+                    "Army command service must own the same persisted stores before recruitment starts");
         }
         server = startingServer;
         ecs = persistedEcs;
-        armyCursor = ecs.newArmyCursor();
         memberships = persistedMemberships;
-        dirtyMarker = persistedDirtyMarker;
+        roster = new RecruitmentRoster(
+                persistedEcs,
+                persistedMemberships,
+                commandService.controllers(),
+                persistedCommands,
+                persistedLogistics,
+                ArmiesConfig.MAX_UNITS_PER_ARMY,
+                persistedDirtyMarker,
+                RecruitmentUnitReleaseListener.NOOP);
         return true;
     }
 
-    /** Detaches runtime references without clearing persisted membership. */
     public void stop(MinecraftServer stoppingServer) {
         if (server != stoppingServer) {
             return;
         }
         server = null;
         ecs = null;
-        armyCursor = null;
         memberships = null;
-        dirtyMarker = null;
+        roster = null;
         factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
+        clearCandidates();
         supplyPolicy = RecruitmentSupplyPolicy.ALLOW_ALL;
     }
 
-    /**
-     * Exact integration hook for the faction projection. Safe default is {@link
-     * RecruitmentFactionPolicy#DENY_ALL}; operators are still able to administer membership.
-     */
     public void installFactionPolicy(RecruitmentFactionPolicy installedPolicy) {
-        Objects.requireNonNull(installedPolicy, "installedPolicy");
-        if (server != null && !server.isSameThread()) {
-            throw new IllegalStateException("Faction policy must be installed on the server thread");
+        if (server != null) {
+            requireServerThread();
         }
-        factionPolicy = installedPolicy;
+        factionPolicy = Objects.requireNonNull(installedPolicy, "installedPolicy");
+    }
+
+    public void installReleaseListener(RecruitmentUnitReleaseListener installedListener) {
+        if (server == null || roster == null) {
+            throw new IllegalStateException("Recruitment service is not running");
+        }
+        requireServerThread();
+        roster.releaseListener(Objects.requireNonNull(installedListener, "installedListener"));
     }
 
     public void installSupplyPolicy(RecruitmentSupplyPolicy installedPolicy) {
-        Objects.requireNonNull(installedPolicy, "installedPolicy");
-        if (server != null && !server.isSameThread()) {
-            throw new IllegalStateException("Supply policy must be installed on the server thread");
+        if (server != null) {
+            requireServerThread();
         }
-        supplyPolicy = installedPolicy;
+        supplyPolicy = Objects.requireNonNull(installedPolicy, "installedPolicy");
     }
 
-    /** Creates an empty player-controlled army for an explicitly selected controlled settlement. */
-    public long createArmy(
-            ArmyCommandAuthority authority, int factionId, long packedVillagePosition) {
-        if (server == null || !commandService.isRunning()) {
-            return NOT_RUNNING;
-        }
-        requireServerThread();
-        if (authority == null) {
-            return PERMISSION_DENIED;
-        }
-
-        Village selected = null;
-        ServerLevel selectedLevel = null;
-        for (villageCursor.reset(); villageCursor.advance(); ) {
-            Village candidate = villageCursor.village();
-            if (validVillage(candidate) && candidate.getCenter().asLong() == packedVillagePosition) {
-                selected = candidate;
-                selectedLevel = villageCursor.level();
-                break;
-            }
-        }
-        if (selected == null || selectedLevel == null) {
-            return VILLAGE_NOT_FOUND;
-        }
-        if (!controlsVillage(authority, selected)) {
-            return SETTLEMENT_NOT_CONTROLLED;
-        }
-        long villageMost = selected.getId().uuid().getMostSignificantBits();
-        long villageLeast = selected.getId().uuid().getLeastSignificantBits();
-        if (!authority.operator()
-                && !factionPolicy.villageBelongsToFaction(factionId, villageMost, villageLeast)) {
-            return WRONG_FACTION;
-        }
-
-        long result = commandService.createControlledArmy(
-                authority,
-                factionId,
-                selectedLevel.dimension().location(),
-                packedVillagePosition);
-        if (result == ArmyCommandService.LIMIT_REACHED) {
-            return ARMY_LIMIT_REACHED;
-        }
-        if (result == ArmyCommandService.PERMISSION_DENIED) {
-            return PERMISSION_DENIED;
-        }
-        if (result == ArmyCommandService.INVALID_FACTION) {
-            return WRONG_FACTION;
-        }
-        if (result >= 0L) {
-            ecs.armyHomeVillage((int) result, villageMost, villageLeast);
-            dirtyMarker.markDirty();
-        }
-        return result;
-    }
-
-    /**
-     * Creates one player-controlled army from the nearest controlled settlement and recruits the
-     * requested number of already loaded, adult, unassigned residents in the same atomic command.
-     * This is the server-authoritative gameplay counterpart to the UI's explicit create + recruit
-     * flow; it never spawns entities, loads chunks, or bypasses settlement/faction ownership.
-     */
-    public long raiseControlledArmy(
+    /** Raises a new controlled army and atomically recruits {@code desiredUnits} nearest fighters. */
+    public long formArmy(
             ArmyCommandAuthority authority,
-            ServerLevel actorLevel,
+            ServerLevel level,
             BlockPos actorPosition,
             int desiredUnits) {
-        if (server == null || !commandService.isRunning()) {
-            return NOT_RUNNING;
+        long ready = prepareIdentity(authority);
+        if (ready != 0L) {
+            return ready;
         }
-        requireServerThread();
-        if (authority == null || actorLevel == null || actorPosition == null
-                || (!authority.operator() && !authority.hasIdentity())) {
-            return PERMISSION_DENIED;
+        if (level == null || level.getServer() != server) {
+            return WRONG_DIMENSION;
         }
-        if (desiredUnits <= 0 || desiredUnits > ArmiesProtocol.MAX_RECRUITS_PER_INTENT) {
+        if (actorPosition == null || desiredUnits <= 0 || desiredUnits > ArmiesConfig.MAX_UNITS_PER_ARMY) {
             return INVALID_COUNT;
         }
-
-        Village selected = null;
-        long selectedDistance = Long.MAX_VALUE;
-        for (villageCursor.reset(); villageCursor.advance(); ) {
-            Village candidate = villageCursor.village();
-            if (villageCursor.level() != actorLevel
-                    || !validVillage(candidate)
-                    || !controlsVillage(authority, candidate)) {
-                continue;
-            }
-            long distance = distanceSquared(actorPosition, candidate.getCenter());
-            if (distance <= MAX_RECRUIT_DISTANCE_SQ && distance < selectedDistance) {
-                selected = candidate;
-                selectedDistance = distance;
-            }
+        Village village = nearestVillage(level, actorPosition);
+        long settlementFailure = validateControlledSettlement(authority, level, village);
+        if (settlementFailure != 0L) {
+            return settlementFailure;
         }
-        if (selected == null) {
-            return SETTLEMENT_NOT_CONTROLLED;
-        }
-
-        long villageMost = selected.getId().uuid().getMostSignificantBits();
-        long villageLeast = selected.getId().uuid().getLeastSignificantBits();
-        int factionId = factionPolicy.factionForVillage(villageMost, villageLeast);
-        if (factionId < 0) {
+        VillageId villageId = village.getId();
+        int faction = factionPolicy.factionForVillage(
+                villageId.uuid().getMostSignificantBits(), villageId.uuid().getLeastSignificantBits());
+        if (faction < 0) {
             return WRONG_FACTION;
         }
+        int candidates = collectCandidates(village, actorPosition, desiredUnits);
+        if (candidates < desiredUnits) {
+            clearCandidates();
+            return VILLAGER_UNAVAILABLE;
+        }
         if ((long) ecs.unitSize() + desiredUnits > MAX_UNIT_ROWS) {
+            clearCandidates();
             return UNIT_LIMIT_REACHED;
         }
 
-        Village selectedVillage = selected;
-        MillVillager[] recruits = new MillVillager[desiredUnits];
-        int[] recruitCount = {0};
-        entityBridge.visitLoaded((villager, village) -> {
-            if (recruitCount[0] == desiredUnits
-                    || villager.level() != actorLevel
-                    || !sameVillage(village, selectedVillage)
-                    || !withinRecruitDistance(actorPosition, villager.blockPosition())) {
-                return;
+        int charged = ledger.debit(level, village, 1, desiredUnits);
+        if (charged < 0) {
+            clearCandidates();
+            return ledgerFailure(charged);
+        }
+        if (!consumeRecruitmentKits(village, desiredUnits)) {
+            ledger.refund(level, village, charged);
+            clearCandidates();
+            return SUPPLY_SHORTAGE;
+        }
+        long created = commandService.createArmyForVerifiedSettlementOwner(
+                authority,
+                faction,
+                StrategicArmyOrder.HOLD,
+                village.getCenter().asLong(),
+                level.dimension().location());
+        if (created < 0L) {
+            refundRecruitmentKits(village, desiredUnits);
+            ledger.refund(level, village, charged);
+            clearCandidates();
+            return creationFailure(created);
+        }
+        int armyHandle = (int) created;
+        for (int index = 0; index < desiredUnits; index++) {
+            long recruited = roster.recruit(
+                    authority,
+                    armyHandle,
+                    candidateMost[index],
+                    candidateLeast[index],
+                    candidatePositions[index]);
+            if (recruited < 0L) {
+                roster.disband(authority, armyHandle);
+                refundRecruitmentKits(village, desiredUnits);
+                ledger.refund(level, village, charged);
+                clearCandidates();
+                return recruited;
             }
-            UUID villagerUuid = villager.getUUID();
-            VillagerRecord record = selectedVillage.getVillagerRecord(villagerUuid);
-            if (record == null || record.isKilled() || villager.isChild()
-                    || memberships.unitHandleForUuid(
-                                    villagerUuid.getMostSignificantBits(),
-                                    villagerUuid.getLeastSignificantBits())
-                            != 0) {
-                return;
-            }
-            recruits[recruitCount[0]++] = villager;
-        });
-        if (recruitCount[0] != desiredUnits) {
+        }
+        clearCandidates();
+        return created;
+    }
+
+    /** Recruits exactly {@code requested} nearest available fighters or mutates nothing. */
+    public long recruitNearest(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            ServerLevel level,
+            BlockPos actorPosition,
+            int requested) {
+        long ready = prepareArmy(authority, armyHandle);
+        if (ready != 0L) {
+            return ready;
+        }
+        if (level == null || level.getServer() != server) {
+            return WRONG_DIMENSION;
+        }
+        if (actorPosition == null || requested <= 0 || requested > ArmiesConfig.MAX_UNITS_PER_ARMY) {
+            return INVALID_COUNT;
+        }
+        if ((long) ecs.armyUnitCount(armyHandle) + requested > ArmiesConfig.MAX_UNITS_PER_ARMY) {
+            return ARMY_FULL;
+        }
+        if ((long) ecs.unitSize() + requested > MAX_UNIT_ROWS) {
+            return UNIT_LIMIT_REACHED;
+        }
+        Village village = nearestVillage(level, actorPosition);
+        long settlementFailure = validateControlledSettlement(authority, level, village);
+        if (settlementFailure != 0L) {
+            return settlementFailure;
+        }
+        if (!armyMatchesVillage(armyHandle, village)) {
+            return WRONG_FACTION;
+        }
+        int candidates = collectCandidates(village, actorPosition, requested);
+        if (candidates < requested) {
+            clearCandidates();
             return VILLAGER_UNAVAILABLE;
         }
 
-        if (!supplyPolicy.tryConsumeRecruitmentKits(villageMost, villageLeast, desiredUnits)) {
+        int charged = ledger.debit(level, village, 0, requested);
+        if (charged < 0) {
+            clearCandidates();
+            return ledgerFailure(charged);
+        }
+        if (!consumeRecruitmentKits(village, requested)) {
+            ledger.refund(level, village, charged);
+            clearCandidates();
             return SUPPLY_SHORTAGE;
         }
-
-        long created = createArmy(authority, factionId, selected.getCenter().asLong());
-        if (created < 0L) {
-            supplyPolicy.refundRecruitmentKits(villageMost, villageLeast, desiredUnits);
-            return created;
-        }
-        int armyHandle = (int) created;
-        int[] createdUnits = new int[desiredUnits];
-        int createdUnitCount = 0;
-        long failure = 0L;
-        for (MillVillager recruit : recruits) {
-            UUID uuid = recruit.getUUID();
-            long result = assignVerified(
+        int committed = 0;
+        for (; committed < requested; committed++) {
+            long result = roster.recruit(
                     authority,
                     armyHandle,
-                    uuid.getMostSignificantBits(),
-                    uuid.getLeastSignificantBits(),
-                    recruit.blockPosition().asLong());
+                    candidateMost[committed],
+                    candidateLeast[committed],
+                    candidatePositions[committed]);
             if (result < 0L) {
-                failure = result;
-                break;
+                for (int rollback = committed - 1; rollback >= 0; rollback--) {
+                    roster.release(authority, armyHandle, candidateMost[rollback], candidateLeast[rollback]);
+                }
+                refundRecruitmentKits(village, requested);
+                ledger.refund(level, village, charged);
+                clearCandidates();
+                return result;
             }
-            createdUnits[createdUnitCount++] = (int) result;
         }
-        if (failure == 0L) {
-            return created;
-        }
-
-        for (int index = createdUnitCount - 1; index >= 0; index--) {
-            int unitHandle = createdUnits[index];
-            memberships.unbindUnit(unitHandle);
-            ecs.removeUnit(unitHandle);
-        }
-        commandService.rollbackEmptyControlledArmy(authority, armyHandle);
-        supplyPolicy.refundRecruitmentKits(villageMost, villageLeast, desiredUnits);
-        dirtyMarker.markDirty();
-        return failure;
+        clearCandidates();
+        return committed;
     }
 
-    /**
-     * Visits only already loaded, nearby, adult and unassigned villagers from settlements controlled
-     * by the authenticated player. This cold projection is invoked only for an explicit UI sync.
-     */
-    public int visitEligible(ServerPlayer actor, EligibleRecruitSink sink) {
-        if (server == null || memberships == null || actor == null) {
-            return 0;
+    /** Recruits one concrete, already loaded entity selected by the command source. */
+    public long recruitTarget(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            ServerLevel actorLevel,
+            BlockPos actorPosition,
+            MillVillager villager) {
+        long ready = prepareArmy(authority, armyHandle);
+        if (ready != 0L) {
+            return ready;
         }
-        requireServerThread();
-        Objects.requireNonNull(sink, "sink");
-        ServerLevel actorLevel = actor.serverLevel();
-        BlockPos actorPosition = actor.blockPosition();
-        UUID actorId = actor.getUUID();
-        int deniers = MoneyHelper.getTotalDeniers(actor.getInventory());
-        int[] accepted = {0};
-        entityBridge.visitLoaded((villager, village) -> {
-            if (villager.level() != actorLevel
-                    || !validVillage(village)
-                    || !withinRecruitDistance(actorPosition, villager.blockPosition())) {
-                return;
-            }
-            UUID villagerUuid = villager.getUUID();
-            VillagerRecord record = village.getVillagerRecord(villagerUuid);
-            if (record == null || record.isKilled() || villager.isChild()
-                    || memberships.unitHandleForUuid(
-                                    villagerUuid.getMostSignificantBits(),
-                                    villagerUuid.getLeastSignificantBits())
-                            != 0) {
-                return;
-            }
-            boolean controlled = village.isControlledBy(actorId);
-            boolean hiredByPlayer = actorId.equals(villager.getHiredBy());
-            VillagerType type = ModCultures.getVillagerType(villager.getVillagerTypeId());
-            int reputation = village.getCombinedReputation(actorLevel, actorId);
-            int cost = type == null || !HiringHelper.isHireable(type.hiringCost())
-                    ? 0
-                    : HiringHelper.hireCost(type.hiringCost(), controlled);
-            int mode;
-            if (controlled) {
-                mode = EligibleRecruitSink.MODE_CONTROLLED;
-            } else if (hiredByPlayer) {
-                mode = EligibleRecruitSink.MODE_HIRED;
-            } else if (type == null || !HiringHelper.isHireable(type.hiringCost()) || villager.isHired()) {
-                mode = EligibleRecruitSink.MODE_UNAVAILABLE;
-            } else if (reputation < 4_096) {
-                mode = EligibleRecruitSink.MODE_REPUTATION_LOCKED;
-            } else if (deniers < cost) {
-                mode = EligibleRecruitSink.MODE_FUNDS_LOCKED;
-            } else {
-                mode = EligibleRecruitSink.MODE_HIRE_AVAILABLE;
-            }
-            UUID villageUuid = village.getId().uuid();
-            String villageName = village.getVillageName();
-            if (villageName == null || villageName.isBlank()) {
-                villageName = village.getVillageTypeId().getPath();
-            }
-            sink.accept(
-                    villager,
-                    villageName,
-                    villageUuid.getMostSignificantBits(),
-                    villageUuid.getLeastSignificantBits(),
-                    distance(actorPosition, villager.blockPosition()),
-                    mode,
-                    cost,
-                    reputation);
-            accepted[0]++;
-        });
-        return accepted[0];
-    }
-
-    /** Assigns an already loaded Millenaire entity, addressed without retaining it. */
-    public long recruitLoaded(
-            ArmyCommandAuthority authority, int armyHandle, long villagerUuidMost, long villagerUuidLeast) {
-        if (!prepare(authority, armyHandle)) {
-            return preparationFailure(authority, armyHandle);
+        if (actorLevel == null || actorLevel.getServer() != server || actorPosition == null) {
+            return WRONG_DIMENSION;
         }
-
-        MillVillager villager = entityBridge.findLoaded(villagerUuidMost, villagerUuidLeast);
-        if (villager == null || villager.isRemoved()) {
+        if (villager == null || villager.isRemoved() || !villager.isAlive()
+                || villager.level() != actorLevel) {
             return VILLAGER_NOT_LOADED;
         }
         Village village = entityBridge.villageFor(villager);
-        if (village == null || village.getId() == null || village.getId().uuid() == null) {
+        long settlementFailure = validateControlledSettlement(authority, actorLevel, village);
+        if (settlementFailure != 0L) {
+            return settlementFailure;
+        }
+        if (!withinVillageRadius(actorPosition, village)) {
             return VILLAGE_NOT_FOUND;
         }
-
-        VillageId entityVillageId = villager.getVillageId();
-        if (entityVillageId == null
-                || entityVillageId.uuid() == null
-                || entityVillageId.uuid().getMostSignificantBits()
-                        != village.getId().uuid().getMostSignificantBits()
-                || entityVillageId.uuid().getLeastSignificantBits()
-                        != village.getId().uuid().getLeastSignificantBits()) {
-            return VILLAGER_NOT_IN_VILLAGE;
-        }
-
-        UUID villagerUuid = villager.getUUID();
-        VillagerRecord record = village.getVillagerRecord(villagerUuid);
-        if (record == null
-                || record.getUuid() == null
-                || record.getUuid().getMostSignificantBits() != villagerUuidMost
-                || record.getUuid().getLeastSignificantBits() != villagerUuidLeast) {
-            return VILLAGER_NOT_IN_VILLAGE;
-        }
-        if (record.isKilled() || villager.isChild()) {
-            return VILLAGER_UNAVAILABLE;
-        }
-
-        long villageMost = village.getId().uuid().getMostSignificantBits();
-        long villageLeast = village.getId().uuid().getLeastSignificantBits();
-        if (!factionAllowed(authority, armyHandle, villageMost, villageLeast)) {
+        if (!armyMatchesVillage(armyHandle, village)) {
             return WRONG_FACTION;
         }
-        boolean newUnit = needsRecruitmentKit(villagerUuidMost, villagerUuidLeast);
-        if (newUnit && !supplyPolicy.tryConsumeRecruitmentKit(villageMost, villageLeast)) {
+        long recordFailure = validateLoadedRecord(village, villager);
+        if (recordFailure != 0L) {
+            return recordFailure;
+        }
+        if (ecs.armyUnitCount(armyHandle) >= ArmiesConfig.MAX_UNITS_PER_ARMY) {
+            return ARMY_FULL;
+        }
+        UUID uuid = villager.getUUID();
+        if (memberships.unitHandleForUuid(uuid.getMostSignificantBits(), uuid.getLeastSignificantBits()) != 0) {
+            return ALREADY_RECRUITED;
+        }
+        int charged = ledger.debit(actorLevel, village, 0, 1);
+        if (charged < 0) {
+            return ledgerFailure(charged);
+        }
+        if (!consumeRecruitmentKits(village, 1)) {
+            ledger.refund(actorLevel, village, charged);
             return SUPPLY_SHORTAGE;
         }
-        long result = assignVerified(
-                authority, armyHandle, villagerUuidMost, villagerUuidLeast, villager.blockPosition().asLong());
-        if (newUnit && result < 0L) supplyPolicy.refundRecruitmentKits(villageMost, villageLeast, 1);
-        return result;
+        long recruited = roster.recruit(
+                authority,
+                armyHandle,
+                uuid.getMostSignificantBits(),
+                uuid.getLeastSignificantBits(),
+                villager.blockPosition().asLong());
+        if (recruited < 0L) {
+            refundRecruitmentKits(village, 1);
+            ledger.refund(actorLevel, village, charged);
+        }
+        return recruited;
+    }
+
+    /** Compatibility entry point; still performs the same loaded/owned settlement checks. */
+    public long recruitLoaded(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            long villagerUuidMost,
+            long villagerUuidLeast) {
+        long ready = prepareArmy(authority, armyHandle);
+        if (ready != 0L) {
+            return ready;
+        }
+        MillVillager villager = entityBridge.findLoaded(villagerUuidMost, villagerUuidLeast);
+        if (villager == null || !(villager.level() instanceof ServerLevel level)) {
+            return VILLAGER_NOT_LOADED;
+        }
+        return recruitTarget(authority, armyHandle, level, villager.blockPosition(), villager);
     }
 
     /**
-     * UI adapter for one explicitly selected loaded fighter. The actor's server level and position
-     * remain authoritative, so a forged UUID cannot bypass proximity, settlement-control, faction
-     * or adult/alive checks.
+     * UI adapter for one explicitly selected loaded fighter. The player's actual level and
+     * position remain authoritative, so a forged UUID cannot bypass the normal proximity,
+     * settlement-control, faction, availability, ledger or supply checks in {@link
+     * #recruitTarget}.
      */
     public long recruitSelected(
             ArmyCommandAuthority authority,
@@ -449,302 +405,273 @@ public final class MillenaireRecruitmentService {
             BlockPos actorPosition,
             long villagerUuidMost,
             long villagerUuidLeast) {
-        if (!prepare(authority, armyHandle)) {
-            return preparationFailure(authority, armyHandle);
-        }
         MillVillager villager = entityBridge.findLoaded(villagerUuidMost, villagerUuidLeast);
-        if (villager == null || villager.isRemoved() || villager.level() != actorLevel) {
-            return VILLAGER_NOT_LOADED;
-        }
-        Village village = entityBridge.villageFor(villager);
-        if (!validVillage(village)) {
-            return VILLAGE_NOT_FOUND;
-        }
-        if (!controlsVillage(authority, village)) {
-            return SETTLEMENT_NOT_CONTROLLED;
-        }
-        if (!withinRecruitDistance(actorPosition, villager.blockPosition())) {
-            return VILLAGER_UNAVAILABLE;
-        }
-        VillagerRecord record = village.getVillagerRecord(villager.getUUID());
-        if (record == null || record.isKilled() || villager.isChild()) {
-            return VILLAGER_UNAVAILABLE;
-        }
-        long villageMost = village.getId().uuid().getMostSignificantBits();
-        long villageLeast = village.getId().uuid().getLeastSignificantBits();
-        if (!factionAllowed(authority, armyHandle, villageMost, villageLeast)) {
-            return WRONG_FACTION;
-        }
-        boolean newUnit = needsRecruitmentKit(villagerUuidMost, villagerUuidLeast);
-        if (newUnit && !supplyPolicy.tryConsumeRecruitmentKit(villageMost, villageLeast)) {
-            return SUPPLY_SHORTAGE;
-        }
-        long result = assignVerified(
-                authority, armyHandle, villagerUuidMost, villagerUuidLeast, villager.blockPosition().asLong());
-        if (newUnit && result < 0L) supplyPolicy.refundRecruitmentKits(villageMost, villageLeast, 1);
-        return result;
+        return recruitTarget(authority, armyHandle, actorLevel, actorPosition, villager);
     }
 
-    /**
-     * Assigns an existing but possibly unloaded Millenaire record. No chunk or entity is loaded.
-     * The caller supplies the existing UUID object used by Millenaire's public UUID-keyed record
-     * map; the primitive village id is resolved only from the already reconciled index.
-     */
+    /** Unloaded records are never recruited; this method remains as a fail-closed API boundary. */
     public long recruitRecord(
             ArmyCommandAuthority authority,
             int armyHandle,
             long villageUuidMost,
             long villageUuidLeast,
             UUID villagerUuid) {
-        Objects.requireNonNull(villagerUuid, "villagerUuid");
-        if (!prepare(authority, armyHandle)) {
-            return preparationFailure(authority, armyHandle);
+        long ready = prepareArmy(authority, armyHandle);
+        if (ready != 0L) {
+            return ready;
         }
-
-        Village village = villageIndex.find(villageUuidMost, villageUuidLeast);
-        if (village == null) {
+        if (villagerUuid == null || villageIndex.find(villageUuidMost, villageUuidLeast) == null) {
             return VILLAGE_NOT_FOUND;
         }
-        VillagerRecord record = village.getVillagerRecord(villagerUuid);
-        if (record == null || record.getUuid() == null) {
-            return VILLAGER_NOT_IN_VILLAGE;
-        }
-        if (record.isKilled() || record.getChildSize() < MillVillager.MAX_CHILD_SIZE) {
-            return VILLAGER_UNAVAILABLE;
-        }
-        if (!factionAllowed(authority, armyHandle, villageUuidMost, villageUuidLeast)) {
-            return WRONG_FACTION;
-        }
+        return VILLAGER_NOT_LOADED;
+    }
 
-        boolean newUnit = needsRecruitmentKit(
-                villagerUuid.getMostSignificantBits(), villagerUuid.getLeastSignificantBits());
-        if (newUnit && !supplyPolicy.tryConsumeRecruitmentKit(villageUuidMost, villageUuidLeast)) {
-            return SUPPLY_SHORTAGE;
-        }
+    public long release(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            long villagerUuidMost,
+            long villagerUuidLeast) {
+        long ready = prepareArmy(authority, armyHandle);
+        return ready != 0L
+                ? ready
+                : roster.release(authority, armyHandle, villagerUuidMost, villagerUuidLeast);
+    }
 
-        BlockPos lastKnownPos = record.getLastKnownPos();
-        long packedPosition = lastKnownPos == null ? village.getCenter().asLong() : lastKnownPos.asLong();
-        long result = assignVerified(
-                authority,
-                armyHandle,
-                villagerUuid.getMostSignificantBits(),
-                villagerUuid.getLeastSignificantBits(),
-                packedPosition);
-        if (newUnit && result < 0L) supplyPolicy.refundRecruitmentKits(villageUuidMost, villageUuidLeast, 1);
-        return result;
+    public long disband(ArmyCommandAuthority authority, int armyHandle) {
+        long ready = prepareIdentity(authority);
+        if (ready != 0L) {
+            return ready;
+        }
+        return roster.disband(authority, armyHandle);
+    }
+
+    /** Lists available loaded fighters in the controlled settlement nearest the source. */
+    public long visitEligible(
+            ArmyCommandAuthority authority,
+            ServerLevel level,
+            BlockPos actorPosition,
+            EligibleVillagerSink sink) {
+        long ready = prepareIdentity(authority);
+        if (ready != 0L) {
+            return ready;
+        }
+        if (level == null || level.getServer() != server || actorPosition == null || sink == null) {
+            return WRONG_DIMENSION;
+        }
+        Village village = nearestVillage(level, actorPosition);
+        long settlementFailure = validateControlledSettlement(authority, level, village);
+        if (settlementFailure != 0L) {
+            return settlementFailure;
+        }
+        int count = collectCandidates(village, actorPosition, ArmiesConfig.MAX_UNITS_PER_ARMY);
+        for (int index = 0; index < count; index++) {
+            MillVillager villager = candidateEntities[index];
+            VillageId id = village.getId();
+            sink.accept(
+                    villager,
+                    village.getVillageName(),
+                    id.uuid().getMostSignificantBits(),
+                    id.uuid().getLeastSignificantBits(),
+                    candidateDistances[index]);
+        }
+        clearCandidates();
+        return count;
     }
 
     public int membershipCount() {
         return memberships == null ? 0 : memberships.size();
     }
 
-    /**
-     * Uses Millenaire's public hire rules and currency, then places the real hired villager in a
-     * player-controlled retinue. The same loaded entity remains in the world for the full day;
-     * this method does not spawn a copy or manufacture a numeric soldier.
-     */
-    public long hireIntoRetinue(ServerPlayer player, long villagerUuidMost, long villagerUuidLeast) {
-        if (server == null || !commandService.isRunning() || player == null) return NOT_RUNNING;
-        requireServerThread();
-        MillVillager villager = entityBridge.findLoaded(villagerUuidMost, villagerUuidLeast);
-        if (villager == null
-                || villager.isRemoved()
-                || !villager.isAlive()
-                || villager.isChild()
-                || villager.level() != player.serverLevel()
-                || distanceSquared(player.blockPosition(), villager.blockPosition()) > 64L * 64L) {
-            return VILLAGER_UNAVAILABLE;
-        }
-        Village village = entityBridge.villageFor(villager);
-        if (!validVillage(village)) return VILLAGE_NOT_FOUND;
-        VillagerRecord record = village.getVillagerRecord(villager.getUUID());
-        if (record == null || record.isKilled()) return VILLAGER_NOT_IN_VILLAGE;
-        VillagerType type = ModCultures.getVillagerType(villager.getVillagerTypeId());
-        if (type == null || !HiringHelper.isHireable(type.hiringCost())) return HIRE_UNAVAILABLE;
-
-        UUID playerId = player.getUUID();
-        UUID hiredBy = villager.getHiredBy();
-        boolean alreadyHiredByPlayer = playerId.equals(hiredBy);
-        if (villager.isHired() && !alreadyHiredByPlayer) return HIRE_UNAVAILABLE;
-
-        int cost = 0;
-        boolean charged = false;
-        if (!alreadyHiredByPlayer) {
-            if (village.getCombinedReputation(player.serverLevel(), playerId) < 4_096) {
-                return REPUTATION_TOO_LOW;
-            }
-            cost = HiringHelper.hireCost(type.hiringCost(), village.isControlledBy(playerId));
-            if (!MoneyHelper.removeDeniers(player.getInventory(), cost)) return MONEY_TOO_LOW;
-            charged = true;
-            village.setVillagerHired(
-                    player.serverLevel(), villager.getUUID(), playerId,
-                    player.serverLevel().getGameTime() + 24_000L);
-        }
-
-        UUID villageId = village.getId().uuid();
-        int factionId = factionPolicy.factionForVillage(
-                villageId.getMostSignificantBits(), villageId.getLeastSignificantBits());
-        if (factionId < 0) {
-            rollbackHire(player, village, villager, charged, cost);
-            return WRONG_FACTION;
-        }
-        ArmyCommandAuthority authority = ArmyCommandAuthority.player(playerId, player.hasPermissions(2));
-        int armyHandle = findControlledArmy(authority, factionId);
-        boolean createdArmy = false;
-        if (armyHandle == PackedArmyEcs.NO_ARMY) {
-            long created = commandService.createControlledArmy(
-                    authority,
-                    factionId,
-                    player.serverLevel().dimension().location(),
-                    villager.blockPosition().asLong());
-            if (created < 0L) {
-                rollbackHire(player, village, villager, charged, cost);
-                return created == ArmyCommandService.LIMIT_REACHED ? ARMY_LIMIT_REACHED : PERMISSION_DENIED;
-            }
-            armyHandle = (int) created;
-            createdArmy = true;
-            ecs.armyHomeVillage(armyHandle, villageId.getMostSignificantBits(), villageId.getLeastSignificantBits());
-            dirtyMarker.markDirty();
-        }
-        long assigned = assignVerified(
-                authority,
-                armyHandle,
-                villagerUuidMost,
-                villagerUuidLeast,
-                villager.blockPosition().asLong());
-        if (assigned < 0L) {
-            if (createdArmy) commandService.rollbackEmptyControlledArmy(authority, armyHandle);
-            rollbackHire(player, village, villager, charged, cost);
-        }
-        return assigned;
-    }
-
-    private int findControlledArmy(ArmyCommandAuthority authority, int factionId) {
-        for (armyCursor.reset(); armyCursor.advance(); ) {
-            if (armyCursor.faction() == factionId
-                    && commandService.canControl(authority, armyCursor.handle())) {
-                return armyCursor.handle();
-            }
-        }
-        return PackedArmyEcs.NO_ARMY;
-    }
-
-    private static void rollbackHire(
-            ServerPlayer player, Village village, MillVillager villager, boolean charged, int cost) {
-        if (!charged) return;
-        village.setVillagerHired(player.serverLevel(), villager.getUUID(), null, 0L);
-        MoneyHelper.addDeniers(player.getInventory(), cost, player);
-    }
-
-    private boolean prepare(ArmyCommandAuthority authority, int armyHandle) {
-        if (server == null || !commandService.isRunning()) {
-            return false;
-        }
-        requireServerThread();
-        return authority != null && ecs.isArmyAlive(armyHandle) && commandService.canControl(authority, armyHandle);
-    }
-
-    private long preparationFailure(ArmyCommandAuthority authority, int armyHandle) {
-        if (server == null || !commandService.isRunning()) {
+    private long prepareIdentity(ArmyCommandAuthority authority) {
+        if (server == null || roster == null || !commandService.isRunning()) {
             return NOT_RUNNING;
+        }
+        requireServerThread();
+        return authority == null || !authority.hasIdentity() ? PERMISSION_DENIED : 0L;
+    }
+
+    private long prepareArmy(ArmyCommandAuthority authority, int armyHandle) {
+        long ready = prepareIdentity(authority);
+        if (ready != 0L) {
+            return ready;
         }
         if (!ecs.isArmyAlive(armyHandle)) {
             return ARMY_NOT_FOUND;
         }
-        return PERMISSION_DENIED;
+        return commandService.canControl(authority, armyHandle) ? 0L : PERMISSION_DENIED;
     }
 
-    private boolean factionAllowed(
-            ArmyCommandAuthority authority, int armyHandle, long villageUuidMost, long villageUuidLeast) {
-        return authority.operator()
-                || factionPolicy.villageBelongsToFaction(
-                        ecs.armyFaction(armyHandle), villageUuidMost, villageUuidLeast);
-    }
-
-    private boolean needsRecruitmentKit(long villagerUuidMost, long villagerUuidLeast) {
-        int unitHandle = memberships.unitHandleForUuid(villagerUuidMost, villagerUuidLeast);
-        return unitHandle == 0 || !ecs.isUnitAlive(unitHandle);
-    }
-
-    private long assignVerified(
-            ArmyCommandAuthority authority,
-            int targetArmyHandle,
-            long villagerUuidMost,
-            long villagerUuidLeast,
-            long packedPosition) {
-        int targetOrder = ecs.armyOrder(targetArmyHandle);
-        int unitHandle = memberships.unitHandleForUuid(villagerUuidMost, villagerUuidLeast);
-        if (unitHandle != 0 && !ecs.isUnitAlive(unitHandle)) {
-            memberships.unbindUnit(unitHandle);
-            dirtyMarker.markDirty();
-            unitHandle = 0;
-        }
-
-        if (unitHandle == 0) {
-            if (ecs.unitSize() >= MAX_UNIT_ROWS) {
-                return UNIT_LIMIT_REACHED;
+    private Village nearestVillage(ServerLevel level, BlockPos origin) {
+        long bestDistance = (long) ArmiesConfig.RECRUITMENT_VILLAGE_RADIUS
+                * ArmiesConfig.RECRUITMENT_VILLAGE_RADIUS;
+        Village best = null;
+        for (villageCursor.reset(); villageCursor.advance(); ) {
+            Village village = villageCursor.village();
+            BlockPos center = village == null ? null : village.getCenter();
+            if (villageCursor.level() != level || center == null) {
+                continue;
             }
-            unitHandle = ecs.createUnit(targetArmyHandle, targetOrder, INITIAL_UNIT_STATE, packedPosition);
-            memberships.bind(unitHandle, villagerUuidMost, villagerUuidLeast);
-            dirtyMarker.markDirty();
-            return Integer.toUnsignedLong(unitHandle);
+            long distance = squaredHorizontalDistance(origin, center);
+            if (distance <= bestDistance) {
+                bestDistance = distance;
+                best = village;
+            }
         }
+        return best;
+    }
 
-        int oldArmyHandle = ecs.unitArmy(unitHandle);
-        if (oldArmyHandle != PackedArmyEcs.NO_ARMY
-                && oldArmyHandle != targetArmyHandle
-                && !commandService.canControl(authority, oldArmyHandle)) {
-            return PERMISSION_DENIED;
+    private boolean consumeRecruitmentKits(Village village, int count) {
+        VillageId id = village.getId();
+        UUID uuid = id.uuid();
+        return supplyPolicy.tryConsumeRecruitmentKits(
+                uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), count);
+    }
+
+    private void refundRecruitmentKits(Village village, int count) {
+        VillageId id = village.getId();
+        UUID uuid = id.uuid();
+        supplyPolicy.refundRecruitmentKits(
+                uuid.getMostSignificantBits(), uuid.getLeastSignificantBits(), count);
+    }
+
+    private long validateControlledSettlement(
+            ArmyCommandAuthority authority, ServerLevel level, Village village) {
+        if (village == null || village.getId() == null || village.getId().uuid() == null
+                || village.getCenter() == null) {
+            return VILLAGE_NOT_FOUND;
         }
+        UUID playerId = new UUID(authority.uuidMost(), authority.uuidLeast());
+        return RecruitmentRules.settlementAccess(
+                village.isPlayerControlled(),
+                village.isControlledBy(playerId),
+                village.getCombinedReputation(level, playerId));
+    }
 
-        boolean changed = oldArmyHandle != targetArmyHandle;
-        changed |= ecs.unitPackedPos(unitHandle) != packedPosition;
-        changed |= ecs.unitOrder(unitHandle) != targetOrder;
-        if (changed) {
-            ecs.unitArmy(unitHandle, targetArmyHandle);
-            ecs.unitOrder(unitHandle, targetOrder);
-            ecs.unitPackedPos(unitHandle, packedPosition);
-            dirtyMarker.markDirty();
+    private boolean armyMatchesVillage(int armyHandle, Village village) {
+        VillageId id = village.getId();
+        return id != null && id.uuid() != null && factionPolicy.villageBelongsToFaction(
+                ecs.armyFaction(armyHandle),
+                id.uuid().getMostSignificantBits(),
+                id.uuid().getLeastSignificantBits());
+    }
+
+    private int collectCandidates(Village village, BlockPos origin, int limit) {
+        int count = 0;
+        if (village == null || village.getVillagerRecords() == null) {
+            return 0;
         }
-        return Integer.toUnsignedLong(unitHandle);
-    }
-
-    private static boolean validVillage(Village village) {
-        return village != null
-                && village.getId() != null
-                && village.getId().uuid() != null
-                && village.getCenter() != null
-                && village.getVillageTypeId() != null;
-    }
-
-    private static boolean sameVillage(Village first, Village second) {
-        return validVillage(first)
-                && validVillage(second)
-                && first.getId().uuid().equals(second.getId().uuid());
-    }
-
-    private static boolean controlsVillage(ArmyCommandAuthority authority, Village village) {
-        if (authority == null || !validVillage(village)) {
-            return false;
+        for (VillagerRecord record : village.getVillagerRecords().values()) {
+            if (record == null || record.getUuid() == null) {
+                continue;
+            }
+            UUID uuid = record.getUuid();
+            MillVillager entity = entityBridge.findLoaded(
+                    uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
+            if (entity == null || validateLoadedRecord(village, entity) != 0L
+                    || memberships.unitHandleForUuid(
+                            uuid.getMostSignificantBits(), uuid.getLeastSignificantBits()) != 0) {
+                continue;
+            }
+            long distance = squaredDistance(origin, entity.blockPosition());
+            if (count == limit && (limit == 0 || distance >= candidateDistances[count - 1])) {
+                continue;
+            }
+            int insert = count < limit ? count : count - 1;
+            while (insert > 0 && distance < candidateDistances[insert - 1]) {
+                candidateMost[insert] = candidateMost[insert - 1];
+                candidateLeast[insert] = candidateLeast[insert - 1];
+                candidatePositions[insert] = candidatePositions[insert - 1];
+                candidateDistances[insert] = candidateDistances[insert - 1];
+                candidateEntities[insert] = candidateEntities[insert - 1];
+                insert--;
+            }
+            candidateMost[insert] = uuid.getMostSignificantBits();
+            candidateLeast[insert] = uuid.getLeastSignificantBits();
+            candidatePositions[insert] = entity.blockPosition().asLong();
+            candidateDistances[insert] = distance;
+            candidateEntities[insert] = entity;
+            if (count < limit) {
+                count++;
+            }
         }
-        return authority.operator()
-                || authority.hasIdentity()
-                        && village.isControlledBy(new UUID(authority.uuidMost(), authority.uuidLeast()));
+        return count;
     }
 
-    private static boolean withinRecruitDistance(BlockPos actor, BlockPos target) {
-        return distanceSquared(actor, target) <= MAX_RECRUIT_DISTANCE_SQ;
+    private long validateLoadedRecord(Village village, MillVillager villager) {
+        if (villager == null || villager.isRemoved()) {
+            return VILLAGER_NOT_LOADED;
+        }
+        Village boundVillage = entityBridge.villageFor(villager);
+        if (boundVillage != village) {
+            return VILLAGER_NOT_IN_VILLAGE;
+        }
+        UUID uuid = villager.getUUID();
+        VillagerRecord record = uuid == null ? null : village.getVillagerRecord(uuid);
+        if (record == null || record.getUuid() == null || !record.getUuid().equals(uuid)) {
+            return VILLAGER_NOT_IN_VILLAGE;
+        }
+        VillagerType type = record.getVillagerTypeId() == null
+                ? null
+                : ModCultures.getVillagerType(record.getVillagerTypeId());
+        boolean adult = !record.isKilled() && !villager.isChild()
+                && record.getChildSize() >= MillVillager.MAX_CHILD_SIZE;
+        boolean military = type != null && record.getMilitaryStrength() > 0
+                && (type.isHelpInAttacks() || type.isRaider());
+        boolean busy = record.isAwayHired() || record.getHiredBy() != null
+                || record.isAwayRaiding() || record.isRaidingVillage()
+                || villager.isHired() || villager.isRaiderEntity() || villager.isSelling()
+                || villager.getAttackTarget() != null;
+        return RecruitmentRules.candidate(
+                true,
+                villager.isAlive(),
+                adult,
+                military,
+                busy,
+                memberships.unitHandleForUuid(
+                        uuid.getMostSignificantBits(), uuid.getLeastSignificantBits()) != 0);
     }
 
-    private static int distance(BlockPos actor, BlockPos target) {
-        return (int) Math.min(Integer.MAX_VALUE, Math.round(Math.sqrt(distanceSquared(actor, target))));
+    private boolean withinVillageRadius(BlockPos actorPosition, Village village) {
+        return village != null && village.getCenter() != null
+                && squaredHorizontalDistance(actorPosition, village.getCenter())
+                        <= (long) ArmiesConfig.RECRUITMENT_VILLAGE_RADIUS
+                                * ArmiesConfig.RECRUITMENT_VILLAGE_RADIUS;
     }
 
-    private static long distanceSquared(BlockPos first, BlockPos second) {
+    private static long squaredDistance(BlockPos first, BlockPos second) {
         long dx = (long) first.getX() - second.getX();
         long dy = (long) first.getY() - second.getY();
         long dz = (long) first.getZ() - second.getZ();
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static long squaredHorizontalDistance(BlockPos first, BlockPos second) {
+        long dx = (long) first.getX() - second.getX();
+        long dz = (long) first.getZ() - second.getZ();
+        return dx * dx + dz * dz;
+    }
+
+    private static long ledgerFailure(int result) {
+        return result == SettlementRecruitmentLedger.INSUFFICIENT_RESOURCES
+                ? INSUFFICIENT_RESOURCES
+                : LEDGER_UNAVAILABLE;
+    }
+
+    private static long creationFailure(long result) {
+        return switch ((int) result) {
+            case (int) ArmyCommandService.NOT_RUNNING -> NOT_RUNNING;
+            case (int) ArmyCommandService.PERMISSION_DENIED -> PERMISSION_DENIED;
+            case (int) ArmyCommandService.LIMIT_REACHED -> ARMY_LIMIT_REACHED;
+            case (int) ArmyCommandService.INVALID_FACTION -> WRONG_FACTION;
+            case (int) ArmyCommandService.INVALID_DIMENSION -> WRONG_DIMENSION;
+            default -> result;
+        };
+    }
+
+    private void clearCandidates() {
+        for (int index = 0; index < candidateEntities.length; index++) {
+            candidateEntities[index] = null;
+        }
     }
 
     private void requireServerThread() {
@@ -754,22 +681,12 @@ public final class MillenaireRecruitmentService {
     }
 
     @FunctionalInterface
-    public interface EligibleRecruitSink {
-        int MODE_CONTROLLED = 0;
-        int MODE_HIRED = 1;
-        int MODE_HIRE_AVAILABLE = 2;
-        int MODE_REPUTATION_LOCKED = 3;
-        int MODE_FUNDS_LOCKED = 4;
-        int MODE_UNAVAILABLE = 5;
-
+    public interface EligibleVillagerSink {
         void accept(
                 MillVillager villager,
                 String villageName,
                 long villageUuidMost,
                 long villageUuidLeast,
-                int distanceBlocks,
-                int mode,
-                int cost,
-                int reputation);
+                long squaredDistance);
     }
 }

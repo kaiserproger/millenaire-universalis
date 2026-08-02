@@ -14,9 +14,9 @@ public interface RecruitmentSupplyPolicy {
 
     boolean tryConsumeRecruitmentKits(long villageMost, long villageLeast, int count);
 
-    void refundRecruitmentKits(long villageMost, long villageLeast, int count);
-
     default boolean tryConsumeRecruitmentKit(long villageMost, long villageLeast) {
         return tryConsumeRecruitmentKits(villageMost, villageLeast, 1);
     }
+
+    void refundRecruitmentKits(long villageMost, long villageLeast, int count);
 }

@@ -112,6 +112,29 @@ public final class PackedUnitExecutionState {
         return size;
     }
 
+    /** Removes stale runtime acknowledgement when persistent recruitment membership is released. */
+    public boolean remove(int unitHandle) {
+        int row = indexOf(unitHandle);
+        if (row < 0) {
+            return false;
+        }
+        int removedSlot = PackedArmyEcs.handleSlotIndex(unitHandle);
+        int last = --size;
+        if (row != last) {
+            unitHandles[row] = unitHandles[last];
+            armyHandles[row] = armyHandles[last];
+            revisions[row] = revisions[last];
+            statuses[row] = statuses[last];
+            slotToRow[PackedArmyEcs.handleSlotIndex(unitHandles[row])] = row + 1;
+        }
+        unitHandles[last] = 0;
+        armyHandles[last] = 0;
+        revisions[last] = 0L;
+        statuses[last] = PENDING;
+        slotToRow[removedSlot] = 0;
+        return true;
+    }
+
     public void clear() {
         Arrays.fill(unitHandles, 0, size, 0);
         Arrays.fill(armyHandles, 0, size, 0);

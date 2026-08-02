@@ -119,7 +119,7 @@ public final class StrategicLogisticsEngine {
         return logistics != null;
     }
 
-    /** Installs the persisted settlement-ledger commit boundary used by strategic dispatch. */
+    /** Installs the settlement-ledger commit boundary used by physical/strategic dispatch. */
     public void installSupplyMutationSink(SupplyMutationSink installed) {
         supplyMutationSink = Objects.requireNonNull(installed, "installed");
     }

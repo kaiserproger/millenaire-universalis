@@ -52,11 +52,7 @@ public final class MillArmiesCommands {
                                 .then(literal("logistics")
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
-                                                        context, service, StrategicArmyOrder.LOGISTICS))))
-                                .then(literal("attack")
-                                        .then(argument("position", BlockPosArgument.blockPos())
-                                                .executes(context -> orderAtPosition(
-                                                        context, service, StrategicArmyOrder.ATTACK)))))));
+                                                        context, service, StrategicArmyOrder.LOGISTICS)))))));
     }
 
     private static int openScreen(CommandContext<CommandSourceStack> context) {
@@ -124,8 +120,8 @@ public final class MillArmiesCommands {
         long handle = service.createArmy(
                 authority(source),
                 faction,
-                source.getLevel().dimension().location(),
-                packedPosition);
+                packedPosition,
+                source.getLevel().dimension().location());
         if (handle < 0) {
             return failure(source, handle);
         }
@@ -162,7 +158,7 @@ public final class MillArmiesCommands {
                 authority(source),
                 army,
                 order,
-                source.getLevel().dimension().location(),
+                order.requiresTarget() ? source.getLevel().dimension().location() : null,
                 packedPosition);
         if (result != ArmyCommandService.SUCCESS) {
             return failure(source, result);
@@ -183,6 +179,7 @@ public final class MillArmiesCommands {
             case (int) ArmyCommandService.LIMIT_REACHED -> "Configured army limit reached";
             case (int) ArmyCommandService.INVALID_FACTION -> "Invalid faction";
             case (int) ArmyCommandService.INVALID_ORDER -> "Invalid strategic order";
+            case (int) ArmyCommandService.INVALID_DIMENSION -> "Target dimension is unavailable";
             default -> "Army command failed (" + result + ')';
         };
         source.sendFailure(Component.literal(message));

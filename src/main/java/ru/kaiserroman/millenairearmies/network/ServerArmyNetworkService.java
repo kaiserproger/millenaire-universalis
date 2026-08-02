@@ -10,12 +10,11 @@ import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedFactionState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
-import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
-import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
-import ru.kaiserroman.millenairearmies.server.realm.RealmService;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
+import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
+import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
 
 /**
  * Minimal authoritative networking vertical slice. It projects only armies controlled by the
@@ -36,29 +35,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     private final ServerArmyRosterProjection rosterProjection;
     private final ArmyOrderExecutionBridge execution;
     private final SettlementEconomyEngine settlementEconomy;
-    private final RealmService realmService;
     private int visibleFactionCount;
-
-    public ServerArmyNetworkService(ArmySavedData data, ArmyCommandService commands) {
-        this(data, commands, null, null, null, null, null, null);
-    }
-
-    public ServerArmyNetworkService(
-            ArmySavedData data,
-            ArmyCommandService commands,
-            FactionProjectionService factionProjection) {
-        this(data, commands, factionProjection, null, null, null, null, null);
-    }
-
-    public ServerArmyNetworkService(
-            ArmySavedData data,
-            ArmyCommandService commands,
-            FactionProjectionService factionProjection,
-            MillenaireVillageIndex villageIndex,
-            MillenaireRecruitmentService recruitment,
-            ArmyOrderExecutionBridge execution) {
-        this(data, commands, factionProjection, villageIndex, recruitment, execution, null, null);
-    }
 
     public ServerArmyNetworkService(
             ArmySavedData data,
@@ -68,28 +45,14 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             MillenaireRecruitmentService recruitment,
             ArmyOrderExecutionBridge execution,
             SettlementEconomyEngine settlementEconomy) {
-        this(data, commands, factionProjection, villageIndex, recruitment, execution, settlementEconomy, null);
-    }
-
-    public ServerArmyNetworkService(
-            ArmySavedData data,
-            ArmyCommandService commands,
-            FactionProjectionService factionProjection,
-            MillenaireVillageIndex villageIndex,
-            MillenaireRecruitmentService recruitment,
-            ArmyOrderExecutionBridge execution,
-            SettlementEconomyEngine settlementEconomy,
-            RealmService realmService) {
         this.data = data;
         this.commands = commands;
         this.factionProjection = factionProjection;
         this.recruitment = recruitment;
-        this.rosterProjection = villageIndex == null || factionProjection == null
-                ? null
-                : new ServerArmyRosterProjection(data, villageIndex, factionProjection, recruitment);
+        this.rosterProjection = new ServerArmyRosterProjection(
+                data, villageIndex, factionProjection, recruitment);
         this.execution = execution;
         this.settlementEconomy = settlementEconomy;
-        this.realmService = realmService;
         this.unitCursor = data.ecs().newUnitCursor();
         this.relationCursor = data.factions().newCursor();
         this.logisticsCursor = data.logistics().newCursor();
@@ -142,13 +105,16 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                     ArmiesProtocol.RESULT_STALE, 0);
             return;
         }
-        if (recruitment == null || intent.templateKeyId() != 0 || intent.desiredUnits() != 1) {
+        if (recruitment == null || intent.templateKeyId() != 0) {
             sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_CREATE_ARMY,
                     ArmiesProtocol.RESULT_INVALID, 0);
             return;
         }
-        long result = recruitment.createArmy(
-                authority(player), intent.factionId(), intent.homeVillagePosition());
+        // Faction and village position are display hints only. The authoritative recruitment
+        // service resolves the nearby settlement, verifies ownership/reputation, charges its
+        // economy and creates an army only together with real loaded fighters.
+        long result = recruitment.formArmy(
+                authority(player), player.serverLevel(), player.blockPosition(), intent.desiredUnits());
         if (result >= 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }
@@ -199,29 +165,6 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     }
 
     @Override
-    public void hireRecruit(ServerPlayer player, HireRecruitIntent intent) {
-        if (intent.expectedRevision() != data.armyRevision()) {
-            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
-            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_HIRE,
-                    ArmiesProtocol.RESULT_STALE, 0);
-            return;
-        }
-        if (recruitment == null) {
-            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_HIRE,
-                    ArmiesProtocol.RESULT_INVALID, 0);
-            return;
-        }
-        long result = recruitment.hireIntoRetinue(
-                player, intent.villagerUuidMost(), intent.villagerUuidLeast());
-        if (result >= 0L) {
-            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
-        }
-        sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_HIRE,
-                result >= 0L ? ArmiesProtocol.RESULT_ACCEPTED : recruitmentResult(result),
-                result >= 0L ? 1 : 0);
-    }
-
-    @Override
     public void issueOrder(ServerPlayer player, IssueOrderIntent intent) {
         if (intent.expectedRevision() != data.armyRevision() || intent.flags() != 0) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
@@ -245,38 +188,13 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                 authority(player),
                 intent.armyHandle(),
                 order,
-                intent.targetDimension(),
+                order.requiresTarget() ? player.serverLevel().dimension().location() : null,
                 intent.primaryPosition());
         if (result == ArmyCommandService.SUCCESS) {
             sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
         }
         sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
                 commandResult(result), result == ArmyCommandService.SUCCESS ? 1 : 0);
-    }
-
-    @Override
-    public void realmAction(ServerPlayer player, RealmActionIntent intent) {
-        if (realmService == null) {
-            sendRealm(player, intent.actionId(), intent.action(), ArmiesProtocol.RESULT_INVALID);
-            return;
-        }
-        long currentRealmRevision = realmService.data().revision(player.getUUID());
-        if (intent.expectedArmyRevision() != data.armyRevision()
-                || intent.expectedRealmRevision() != currentRealmRevision) {
-            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
-            sendRealm(player, intent.actionId(), intent.action(), ArmiesProtocol.RESULT_STALE);
-            return;
-        }
-        int outcome = switch (intent.action()) {
-            case RealmActionIntent.ACTION_FOUND -> realmService.found(
-                    player,
-                    intent.capitalVillageMost(),
-                    intent.capitalVillageLeast(),
-                    "");
-            case RealmActionIntent.ACTION_SET_TAX -> realmService.setTaxRate(player, intent.taxRate());
-            default -> RealmService.INVALID_NAME;
-        };
-        sendRealm(player, intent.actionId(), intent.action(), realmResult(outcome));
     }
 
     private void sendSnapshot(ServerPlayer player, byte sections, byte scope, int scopeHandle) {
@@ -378,7 +296,6 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                 setInt(ints, row, ArmiesProtocol.COLUMN_OWNER, handle);
                 setInt(ints, row, ArmiesProtocol.COLUMN_PRIMARY_KEY, visible.orders[index]);
                 setInt(ints, row, ArmiesProtocol.COLUMN_SECONDARY_KEY, visible.states[index]);
-                setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_0, data.ecs().armyTargetDimension(handle));
                 setLong(longs, row, 0, Integer.toUnsignedLong(handle));
                 setLong(longs, row, 1, visible.targets[index]);
                 setByte(bytes, row, 0, (byte) visible.orders[index]);
@@ -405,7 +322,6 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                 bytes));
         sendFactionMetadata(player);
         sendRoster(player, 0, ArmiesProtocol.ACTION_NONE, ArmiesProtocol.RESULT_NONE, 0);
-        sendRealm(player, 0, (byte) 0, ArmiesProtocol.RESULT_NONE);
     }
 
     private void sendFactionMetadata(ServerPlayer player) {
@@ -529,9 +445,13 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
         setInt(ints, row, ArmiesProtocol.COLUMN_PRIMARY_KEY, visible.states[index]);
         setInt(ints, row, ArmiesProtocol.COLUMN_SECONDARY_KEY, visible.units[index]);
         setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_0, visible.units[index]);
-        setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_1, settlementEconomy == null
-                ? 100
-                : settlementEconomy.factionSupplyPercent(visible.factions[index]));
+        setInt(
+                ints,
+                row,
+                ArmiesProtocol.COLUMN_VALUE_1,
+                settlementEconomy == null
+                        ? 100
+                        : settlementEconomy.factionSupplyPercent(visible.factions[index]));
         setInt(ints, row, ArmiesProtocol.COLUMN_VALUE_2, 100);
         setLong(longs, row, 0, visible.targets[index]);
         setLong(longs, row, 1, visible.targets[index]);
@@ -566,47 +486,13 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             case ArmiesProtocol.ORDER_MOVE -> StrategicArmyOrder.MOVE;
             case ArmiesProtocol.ORDER_RALLY -> StrategicArmyOrder.RALLY;
             case ArmiesProtocol.ORDER_LOGISTICS -> StrategicArmyOrder.LOGISTICS;
-            case ArmiesProtocol.ORDER_ATTACK -> StrategicArmyOrder.ATTACK;
             default -> null;
         };
     }
 
     private void sendRoster(ServerPlayer player, int actionId, byte action, int result, int affected) {
-        if (rosterProjection != null) {
-            ArmiesNetwork.sendRoster(player, rosterProjection.snapshot(
-                    player, actionId, action, result, affected));
-        }
-    }
-
-    private void sendRealm(ServerPlayer player, int actionId, byte action, int result) {
-        if (realmService == null) return;
-        RealmService.Snapshot snapshot = realmService.snapshot(player.getUUID());
-        ArmiesNetwork.sendRealm(player, new RealmStatePayload(
-                snapshot.revision(),
-                actionId,
-                action,
-                result,
-                snapshot.founded(),
-                boundedRealmText(snapshot.name()),
-                boundedRealmText(snapshot.capitalName()),
-                snapshot.taxRate(),
-                snapshot.treasury(),
-                snapshot.settlementCount(),
-                snapshot.population(),
-                snapshot.capturedSettlements(),
-                snapshot.food(),
-                snapshot.iron(),
-                snapshot.leather(),
-                snapshot.arrows()));
-    }
-
-    private static String boundedRealmText(String value) {
-        if (value == null || value.isEmpty()) return "";
-        byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
-        if (encoded.length <= RealmStatePayload.MAX_STRING_UTF8_BYTES) return value;
-        int end = RealmStatePayload.MAX_STRING_UTF8_BYTES;
-        while (end > 0 && (encoded[end] & 0xc0) == 0x80) end--;
-        return new String(encoded, 0, end, StandardCharsets.UTF_8);
+        ArmiesNetwork.sendRoster(player, rosterProjection.snapshot(
+                player, actionId, action, result, affected));
     }
 
     private static int commandResult(long result) {
@@ -634,19 +520,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                     (int) MillenaireRecruitmentService.VILLAGER_NOT_LOADED -> ArmiesProtocol.RESULT_NOT_FOUND;
             case (int) MillenaireRecruitmentService.UNIT_LIMIT_REACHED,
                     (int) MillenaireRecruitmentService.ARMY_LIMIT_REACHED,
-                    (int) MillenaireRecruitmentService.ARMY_FULL,
-                    (int) MillenaireRecruitmentService.SUPPLY_SHORTAGE -> ArmiesProtocol.RESULT_LIMIT_REACHED;
-            default -> ArmiesProtocol.RESULT_INVALID;
-        };
-    }
-
-    private static int realmResult(int result) {
-        return switch (result) {
-            case RealmService.SUCCESS -> ArmiesProtocol.RESULT_ACCEPTED;
-            case RealmService.SETTLEMENT_NOT_FOUND -> ArmiesProtocol.RESULT_NOT_FOUND;
-            case RealmService.SETTLEMENT_NOT_CONTROLLED, RealmService.TOO_FAR ->
-                    ArmiesProtocol.RESULT_PERMISSION_DENIED;
-            case RealmService.ALREADY_FOUNDED -> ArmiesProtocol.RESULT_LIMIT_REACHED;
+                    (int) MillenaireRecruitmentService.ARMY_FULL -> ArmiesProtocol.RESULT_LIMIT_REACHED;
             default -> ArmiesProtocol.RESULT_INVALID;
         };
     }

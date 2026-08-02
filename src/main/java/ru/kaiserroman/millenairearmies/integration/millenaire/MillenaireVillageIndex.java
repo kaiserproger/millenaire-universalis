@@ -39,7 +39,7 @@ public final class MillenaireVillageIndex {
 
         for (ServerLevel level : server.getAllLevels()) {
             for (Village village : VillageSavedData.get(level).getVillageManager().getAllVillages()) {
-                if (village != null && village.getId() != null) {
+                if (village != null && village.getId() != null && village.getId().uuid() != null) {
                     changes += upsert(level, village, activeEpoch);
                 }
             }
@@ -115,6 +115,9 @@ public final class MillenaireVillageIndex {
     }
 
     private int upsert(ServerLevel level, Village village, int activeEpoch) {
+        if (level == null || village == null || village.getId() == null || village.getId().uuid() == null) {
+            return 0;
+        }
         long most = village.getId().uuid().getMostSignificantBits();
         long least = village.getId().uuid().getLeastSignificantBits();
         ensureInsertCapacity();
