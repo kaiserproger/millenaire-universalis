@@ -13,4 +13,9 @@ public interface RecruitmentFactionPolicy {
     RecruitmentFactionPolicy DENY_ALL = (armyFactionId, villageUuidMost, villageUuidLeast) -> false;
 
     boolean villageBelongsToFaction(int armyFactionId, long villageUuidMost, long villageUuidLeast);
+
+    /** Resolves the stable faction for a server-validated settlement, or {@code -1} when unknown. */
+    default int factionForVillage(long villageUuidMost, long villageUuidLeast) {
+        return -1;
+    }
 }

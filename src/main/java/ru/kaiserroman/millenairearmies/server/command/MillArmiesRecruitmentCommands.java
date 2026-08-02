@@ -1,5 +1,7 @@
 package ru.kaiserroman.millenairearmies.server.command;
 
+import static com.mojang.brigadier.arguments.IntegerArgumentType.getInteger;
+import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
 import static com.mojang.brigadier.arguments.LongArgumentType.getLong;
 import static com.mojang.brigadier.arguments.LongArgumentType.longArg;
 import static net.minecraft.commands.Commands.argument;
@@ -14,6 +16,7 @@ import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
+import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 
 /** Separate Brigadier registrar for Millenaire membership operations. */
@@ -28,9 +31,58 @@ public final class MillArmiesRecruitmentCommands {
             CommandDispatcher<CommandSourceStack> dispatcher,
             MillenaireRecruitmentService recruitmentService) {
         LiteralArgumentBuilder<CommandSourceStack> root = literal("millarmies");
+        root.then(literal("raise")
+                .requires(source -> source.getPlayer() != null)
+                .then(argument("count", integer(1, ArmiesProtocol.MAX_RECRUITS_PER_INTENT))
+                        .executes(context -> raise(context, recruitmentService))));
         root.then(recruitBranch("recruit", recruitmentService));
         root.then(recruitBranch("assign", recruitmentService));
+        root.then(literal("hire")
+                .requires(source -> source.getPlayer() != null)
+                .then(argument("villager", UuidArgument.uuid())
+                        .executes(context -> hire(context, recruitmentService))));
         dispatcher.register(root);
+    }
+
+    private static int hire(
+            CommandContext<CommandSourceStack> context, MillenaireRecruitmentService service) {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = source.getPlayer();
+        if (player == null) return 0;
+        UUID villager = UuidArgument.getUuid(context, "villager");
+        long result = service.hireIntoRetinue(
+                player, villager.getMostSignificantBits(), villager.getLeastSignificantBits());
+        if (result < 0L) {
+            source.sendFailure(Component.literal(failureMessage(result)));
+            return 0;
+        }
+        source.sendSuccess(
+                () -> Component.literal("Hired Millenaire villager " + villager
+                        + " into your retinue as unit " + result),
+                true);
+        return 1;
+    }
+
+    private static int raise(
+            CommandContext<CommandSourceStack> context, MillenaireRecruitmentService service) {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("This command requires a player"));
+            return 0;
+        }
+        int count = getInteger(context, "count");
+        long result = service.raiseControlledArmy(
+                authority(source), player.serverLevel(), player.blockPosition(), count);
+        if (result < 0L) {
+            source.sendFailure(Component.literal(failureMessage(result)));
+            return 0;
+        }
+        source.sendSuccess(
+                () -> Component.literal("Raised army " + result + " with " + count
+                        + " residents from your controlled settlement"),
+                true);
+        return 1;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> recruitBranch(
@@ -90,6 +142,22 @@ public final class MillArmiesRecruitmentCommands {
                     "Killed or child villagers cannot be recruited";
             case (int) MillenaireRecruitmentService.UNIT_LIMIT_REACHED ->
                     "Packed unit handle limit reached";
+            case (int) MillenaireRecruitmentService.SETTLEMENT_NOT_CONTROLLED ->
+                    "Stand near a Millenaire settlement you control";
+            case (int) MillenaireRecruitmentService.ARMY_LIMIT_REACHED ->
+                    "Configured army limit reached";
+            case (int) MillenaireRecruitmentService.ARMY_FULL ->
+                    "The selected army cannot accept more units";
+            case (int) MillenaireRecruitmentService.INVALID_COUNT ->
+                    "Recruitment count is outside the allowed range";
+            case (int) MillenaireRecruitmentService.SUPPLY_SHORTAGE ->
+                    "Settlement reserves cannot equip another recruit";
+            case (int) MillenaireRecruitmentService.HIRE_UNAVAILABLE ->
+                    "This resident cannot be hired or already serves another player";
+            case (int) MillenaireRecruitmentService.REPUTATION_TOO_LOW ->
+                    "Millenaire reputation 4096 is required to hire this resident";
+            case (int) MillenaireRecruitmentService.MONEY_TOO_LOW ->
+                    "Not enough deniers to hire this resident for one day";
             default -> "Recruitment failed (" + result + ')';
         };
     }

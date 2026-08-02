@@ -248,6 +248,7 @@ public interface ArmyClientMirror {
     default int settlementFactionId(int index) { return -1; }
     default int settlementPopulation(int index) { return 0; }
     default int settlementAvailableRecruitCount(int index) { return 0; }
+    default boolean settlementControlled(int index) { return false; }
     default String settlementName(int index) { return ""; }
     default String settlementCulture(int index) { return ""; }
 
@@ -257,6 +258,9 @@ public interface ArmyClientMirror {
     default long recruitVillageMost(int index) { return 0L; }
     default long recruitVillageLeast(int index) { return 0L; }
     default int recruitStrength(int index) { return 0; }
+    default int recruitMode(int index) { return 0; }
+    default int recruitCost(int index) { return 0; }
+    default int recruitReputation(int index) { return 0; }
     default String recruitName(int index) { return ""; }
     default String recruitRole(int index) { return ""; }
 
@@ -264,6 +268,23 @@ public interface ArmyClientMirror {
     default byte acknowledgedAction() { return 0; }
     default int acknowledgedResult() { return 0; }
     default int acknowledgedAffected() { return 0; }
+
+    default boolean realmFounded() { return false; }
+    default long realmRevision() { return 0L; }
+    default String realmName() { return ""; }
+    default String realmCapitalName() { return ""; }
+    default int realmTaxRate() { return 0; }
+    default long realmTreasury() { return 0L; }
+    default int realmSettlementCount() { return 0; }
+    default int realmPopulation() { return 0; }
+    default int realmCapturedSettlements() { return 0; }
+    default int realmFood() { return 0; }
+    default int realmIron() { return 0; }
+    default int realmLeather() { return 0; }
+    default int realmArrows() { return 0; }
+    default int acknowledgedRealmActionId() { return 0; }
+    default byte acknowledgedRealmAction() { return 0; }
+    default int acknowledgedRealmResult() { return 0; }
 
     /**
      * Begins an authoritative order request. For target-requiring orders the adapter may enter its
@@ -283,6 +304,18 @@ public interface ArmyClientMirror {
             long villageUuidLeast,
             int count,
             long[] villagerUuidBits) {
+        return false;
+    }
+
+    default boolean requestHireRecruit(long villagerUuidMost, long villagerUuidLeast) {
+        return false;
+    }
+
+    default boolean requestFoundRealm(long capitalVillageMost, long capitalVillageLeast) {
+        return false;
+    }
+
+    default boolean requestSetRealmTax(int taxRate) {
         return false;
     }
 

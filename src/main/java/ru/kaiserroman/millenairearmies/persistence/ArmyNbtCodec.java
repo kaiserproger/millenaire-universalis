@@ -9,7 +9,8 @@ import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
 
 /** Primitive-array NBT codec. All object allocation is confined to the cold save/load boundary. */
 final class ArmyNbtCodec {
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 3;
+    private static final int MIN_SUPPORTED_SCHEMA_VERSION = 1;
 
     private static final int MAX_ECS_ROWS = 1 << 20;
     private static final int NO_ARMY_ROW = -1;
@@ -23,6 +24,7 @@ final class ArmyNbtCodec {
     private static final String TAG_CONTROLLERS = "Controllers";
     private static final String TAG_COMMANDS = "Commands";
     private static final String TAG_LOGISTICS = "Logistics";
+    private static final String TAG_SETTLEMENT_ECONOMY = "SettlementEconomy";
     private static final String TAG_COUNT = "Count";
 
     private ArmyNbtCodec() {
@@ -38,7 +40,8 @@ final class ArmyNbtCodec {
             PackedArmyControllers controllers,
             long armyRevision,
             PackedCommandState commands,
-            PackedLogisticsState logistics) {
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy) {
         root.putInt(TAG_SCHEMA_VERSION, SCHEMA_VERSION);
 
         ListTag dimensionNames = new ListTag();
@@ -81,7 +84,12 @@ final class ArmyNbtCodec {
         int[] armyFactions = new int[armyCount];
         int[] armyOrders = new int[armyCount];
         int[] armyStates = new int[armyCount];
+        int[] armyTargetDimensions = new int[armyCount];
         long[] armyTargets = new long[armyCount];
+        long[] armyHomeVillageMost = new long[armyCount];
+        long[] armyHomeVillageLeast = new long[armyCount];
+        long[] armyTargetVillageMost = new long[armyCount];
+        long[] armyTargetVillageLeast = new long[armyCount];
         IntIntTable armyRows = new IntIntTable(armyCount);
 
         PackedArmyEcs.ArmyCursor armyCursor = ecs.newArmyCursor();
@@ -91,7 +99,13 @@ final class ArmyNbtCodec {
             armyFactions[row] = armyCursor.faction();
             armyOrders[row] = armyCursor.order();
             armyStates[row] = armyCursor.state();
+            armyTargetDimensions[row] = armyCursor.targetDimension();
+            requireDimensionId(dimensions, armyTargetDimensions[row], "army");
             armyTargets[row] = armyCursor.packedTargetPos();
+            armyHomeVillageMost[row] = armyCursor.homeVillageMost();
+            armyHomeVillageLeast[row] = armyCursor.homeVillageLeast();
+            armyTargetVillageMost[row] = armyCursor.targetVillageMost();
+            armyTargetVillageLeast[row] = armyCursor.targetVillageLeast();
             armyRows.put(handle, row);
         }
 
@@ -101,7 +115,12 @@ final class ArmyNbtCodec {
         armyTag.putIntArray("Factions", armyFactions);
         armyTag.putIntArray("Orders", armyOrders);
         armyTag.putIntArray("States", armyStates);
+        armyTag.putIntArray("TargetDimensions", armyTargetDimensions);
         armyTag.putLongArray("Targets", armyTargets);
+        armyTag.putLongArray("HomeVillageMost", armyHomeVillageMost);
+        armyTag.putLongArray("HomeVillageLeast", armyHomeVillageLeast);
+        armyTag.putLongArray("TargetVillageMost", armyTargetVillageMost);
+        armyTag.putLongArray("TargetVillageLeast", armyTargetVillageLeast);
         root.put(TAG_ARMIES, armyTag);
 
         int controllerCount = controllers.size();
@@ -271,15 +290,22 @@ final class ArmyNbtCodec {
         logisticsTag.putByteArray("Statuses", statuses);
         logisticsTag.putLongArray("Revisions", logisticsRevisions);
         root.put(TAG_LOGISTICS, logisticsTag);
+        root.put(TAG_SETTLEMENT_ECONOMY, settlementEconomy.save(new CompoundTag()));
         return root;
     }
 
     static LoadedState load(
-            CompoundTag root, int maxFactionRelations, int maxCommands, int maxLogisticsRequests) {
+            CompoundTag root,
+            int maxFactionRelations,
+            int maxCommands,
+            int maxLogisticsRequests,
+            int maxSettlements,
+            int maxSettlementShipments) {
         int schemaVersion = root.getInt(TAG_SCHEMA_VERSION);
-        if (schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion < MIN_SUPPORTED_SCHEMA_VERSION || schemaVersion > SCHEMA_VERSION) {
             throw new IllegalArgumentException(
-                    "Unsupported Millenaire Armies save schema " + schemaVersion + "; expected " + SCHEMA_VERSION);
+                    "Unsupported Millenaire Armies save schema " + schemaVersion
+                            + "; supported " + MIN_SUPPORTED_SCHEMA_VERSION + ".." + SCHEMA_VERSION);
         }
 
         ListTag dimensionNames = root.getList(TAG_DIMENSIONS, Tag.TAG_STRING);
@@ -338,7 +364,22 @@ final class ArmyNbtCodec {
         int[] armyFactions = requiredIntArray(armyTag, "Factions", armyCount, TAG_ARMIES);
         int[] armyOrders = requiredIntArray(armyTag, "Orders", armyCount, TAG_ARMIES);
         int[] armyStates = requiredIntArray(armyTag, "States", armyCount, TAG_ARMIES);
+        int[] armyTargetDimensions = schemaVersion >= 2
+                ? requiredIntArray(armyTag, "TargetDimensions", armyCount, TAG_ARMIES)
+                : new int[armyCount];
         long[] armyTargets = requiredLongArray(armyTag, "Targets", armyCount, TAG_ARMIES);
+        long[] armyHomeVillageMost = schemaVersion >= 3
+                ? requiredLongArray(armyTag, "HomeVillageMost", armyCount, TAG_ARMIES)
+                : new long[armyCount];
+        long[] armyHomeVillageLeast = schemaVersion >= 3
+                ? requiredLongArray(armyTag, "HomeVillageLeast", armyCount, TAG_ARMIES)
+                : new long[armyCount];
+        long[] armyTargetVillageMost = schemaVersion >= 3
+                ? requiredLongArray(armyTag, "TargetVillageMost", armyCount, TAG_ARMIES)
+                : new long[armyCount];
+        long[] armyTargetVillageLeast = schemaVersion >= 3
+                ? requiredLongArray(armyTag, "TargetVillageLeast", armyCount, TAG_ARMIES)
+                : new long[armyCount];
 
         CompoundTag unitTag = root.getCompound(TAG_UNITS);
         int unitCount = checkedCount(unitTag, TAG_UNITS, MAX_ECS_ROWS);
@@ -357,8 +398,21 @@ final class ArmyNbtCodec {
         }
         int[] restoredArmyHandles = new int[armyCount];
         for (int armyRow = 0; armyRow < armyCount; armyRow++) {
+            requireDimensionId(dimensions, armyTargetDimensions[armyRow], "army");
             restoredArmyHandles[armyRow] = ecs.createArmy(
-                    armyFactions[armyRow], armyOrders[armyRow], armyStates[armyRow], armyTargets[armyRow]);
+                    armyFactions[armyRow],
+                    armyOrders[armyRow],
+                    armyStates[armyRow],
+                    armyTargetDimensions[armyRow],
+                    armyTargets[armyRow]);
+            ecs.armyHomeVillage(
+                    restoredArmyHandles[armyRow],
+                    armyHomeVillageMost[armyRow],
+                    armyHomeVillageLeast[armyRow]);
+            ecs.armyTargetVillage(
+                    restoredArmyHandles[armyRow],
+                    armyTargetVillageMost[armyRow],
+                    armyTargetVillageLeast[armyRow]);
         }
 
         CompoundTag controllerTag = root.getCompound(TAG_CONTROLLERS);
@@ -479,8 +533,33 @@ final class ArmyNbtCodec {
                     logisticsRevisions[logisticsRow]);
         }
         logistics.restoreCounters(logisticsTag.getLong("NextRequestId"), logisticsTag.getLong("NextRevision"));
+        PackedSettlementEconomyState settlementEconomy = root.contains(TAG_SETTLEMENT_ECONOMY)
+                ? PackedSettlementEconomyState.load(
+                        root.getCompound(TAG_SETTLEMENT_ECONOMY), maxSettlements, maxSettlementShipments)
+                : new PackedSettlementEconomyState();
+        int configuredCommodityKeys = 0;
+        for (int commodity = 0; commodity < PackedSettlementEconomyState.COMMODITY_COUNT; commodity++) {
+            int itemKey = settlementEconomy.commodityItemKey(commodity);
+            if (itemKey >= 0) {
+                requireItemId(items, itemKey);
+                configuredCommodityKeys++;
+            }
+        }
+        if (configuredCommodityKeys != 0
+                && configuredCommodityKeys != PackedSettlementEconomyState.COMMODITY_COUNT) {
+            throw new IllegalArgumentException("Settlement commodity dictionary is only partially configured");
+        }
         return new LoadedState(
-                dimensions, items, factions, ecs, memberships, controllers, armyRevision, commands, logistics);
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                settlementEconomy);
     }
 
     private static void requireDimensionId(StableDimensionTable dimensions, int dimensionId, String owner) {
@@ -558,7 +637,8 @@ final class ArmyNbtCodec {
             PackedArmyControllers controllers,
             long armyRevision,
             PackedCommandState commands,
-            PackedLogisticsState logistics) {
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy) {
     }
 
     /** Small primitive open-addressed table used only while serializing an ECS snapshot. */

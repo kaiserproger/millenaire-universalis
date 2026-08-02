@@ -85,6 +85,41 @@ public final class PackedArmyControllers {
                 && ownerLeast[index] == uuidLeast;
     }
 
+    public boolean hasController(int armyHandle) {
+        int index = indexOf(armyHandle);
+        return index >= 0 && ownerPresent[index] != 0;
+    }
+
+    public long uuidMost(int armyHandle) {
+        int index = indexOf(armyHandle);
+        if (index < 0 || ownerPresent[index] == 0) {
+            throw new IllegalArgumentException("Army has no player controller: "
+                    + Integer.toUnsignedString(armyHandle));
+        }
+        return ownerMost[index];
+    }
+
+    public long uuidLeast(int armyHandle) {
+        int index = indexOf(armyHandle);
+        if (index < 0 || ownerPresent[index] == 0) {
+            throw new IllegalArgumentException("Army has no player controller: "
+                    + Integer.toUnsignedString(armyHandle));
+        }
+        return ownerLeast[index];
+    }
+
+    /** Same non-empty controller identity; unowned armies are not implicitly allied. */
+    public boolean sameController(int firstArmyHandle, int secondArmyHandle) {
+        int first = indexOf(firstArmyHandle);
+        int second = indexOf(secondArmyHandle);
+        return first >= 0
+                && second >= 0
+                && ownerPresent[first] != 0
+                && ownerPresent[second] != 0
+                && ownerMost[first] == ownerMost[second]
+                && ownerLeast[first] == ownerLeast[second];
+    }
+
     public void clear() {
         Arrays.fill(armyHandles, 0, size, 0);
         Arrays.fill(ownerMost, 0, size, 0L);

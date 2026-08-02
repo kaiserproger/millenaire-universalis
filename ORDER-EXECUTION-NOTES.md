@@ -1,10 +1,8 @@
-# Millenaire army order execution (experimental opt-in)
+# Millenaire army order execution
 
-`orderExecutionEnabled` defaults to `false`. With the production default the lifecycle never
-constructs `ArmyOrderExecutionBridge`, never installs its order listener, never creates a task, and
-never calls a Millenaire AI/navigation API. Commands, persistence, networking and UI remain
-state-only. The server operator must explicitly set `orderExecutionEnabled=true` to exercise the
-experimental entity-side bridge described below.
+`orderExecutionEnabled` defaults to `true` and is asserted by the production-candidate assembler.
+Setting it to `false` remains an emergency fallback that keeps commands, persistence, networking
+and UI state-only without constructing `ArmyOrderExecutionBridge`.
 
 The execution bridge uses Millenaire 9.0.0-beta.2 public APIs only. `MOVE`, `RALLY`, and
 `LOGISTICS` install a retained `VillagerTask` through `GoalScheduler.forceTask`; the task delegates
@@ -31,18 +29,27 @@ Making an addon goal visible would require mutating every loaded `VillagerType.g
 destructively reinitialising every villager scheduler. That relies on an incidental mutable
 `ArrayList`, drops current task ownership, and is not a production-safe public extension point.
 
-The current bridge yields only on public, allocation-free signals it can observe without
-implementing target-finding: `MillVillager.getAttackTarget() != null` and
-`Village.isUnderAttack()`. A newly eligible urgent goal without either signal is delayed until the
-route finishes or Millenaire abandons it. This is a known limitation of the beta.2 public API.
+MOVE/RALLY/LOGISTICS yield on public combat signals (`getAttackTarget()` and
+`Village.isUnderAttack()`). ATTACK is a separate retained task: it selects only real loaded
+MillVillager targets, uses Millenaire navigation, `setAttackTarget` and `performAttack`, and records
+damage/death only from NeoForge events after Minecraft applies them. It never calculates a
+parallel hit-point or casualty simulation.
 
 ## Target dimension and bounds
 
-Phase2 persisted orders contain a packed block position but no dimension id. Consequently the
-experimental bridge cannot prove that an issuer selected the target in the unit's dimension. It
-interprets the coordinates in each loaded unit's current dimension and rejects targets outside
-that level's build height or world border before touching navigation. Cross-dimension execution is
-not production-safe and is another reason the entity bridge is disabled by default.
+Army orders persist a stable target-dimension dictionary id. ATTACK also persists the exact target
+village UUID after server-authoritative resolution, while every army persists its home-village
+UUID. Execution rejects a different entity dimension, coordinates outside build height/world
+border, a non-village ATTACK target, the attacker's own settlement and non-operator conquest before
+the player has founded a realm.
+
+## Physical capture
+
+Village ownership changes only when a real attacker reaches the target centre and no hostile
+loaded Millenaire combatant remains. The target is marked `underAttack` so native defenders can
+react. Death cleanup removes only the dead entity's exact army membership. A successful capture
+updates Millenaire's owner, clears `underAttack`, dirties VillageSavedData and increments the
+player-realm conquest ledger. Without a founded realm, physical capture is fail-closed.
 
 ## Cancellation
 

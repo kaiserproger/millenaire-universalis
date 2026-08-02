@@ -10,10 +10,11 @@ import org.lwjgl.glfw.GLFW;
 import ru.kaiserroman.millenairearmies.client.ArmyClientMirror;
 import ru.kaiserroman.millenairearmies.client.ArmyClientState;
 import ru.kaiserroman.millenairearmies.network.ArmiesProtocol;
+import ru.kaiserroman.millenairearmies.network.ArmyRosterSnapshotPayload;
 
 /**
- * Asset-independent strategic command screen inspired by grand-strategy information density.
- * All mutable simulation data is obtained through {@link ArmyClientMirror}.
+ * Asset-independent, task-focused command screen. All mutable simulation data is obtained through
+ * {@link ArmyClientMirror}; the client never invents actions or strategic state.
  */
 public final class MillenaireCommandScreen extends Screen {
     private static final Component TITLE = Component.translatable("gui.millenaire_armies.title");
@@ -26,10 +27,17 @@ public final class MillenaireCommandScreen extends Screen {
     private static final Component NO_LOGISTICS_HINT = Component.translatable("gui.millenaire_armies.empty.logistics_hint");
     private static final Component NO_SETTLEMENTS = Component.translatable("gui.millenaire_armies.empty.settlements");
     private static final Component NO_RECRUITS = Component.translatable("gui.millenaire_armies.empty.recruits");
+    private static final Component SELECT_SETTLEMENT = Component.translatable("gui.millenaire_armies.recruit.select_settlement");
     private static final Component SELECT_ARMY = Component.translatable("gui.millenaire_armies.recruit.select_army");
     private static final Component SELECT_RECRUITS = Component.translatable("gui.millenaire_armies.recruit.select_recruits");
     private static final Component CREATE_ARMY = Component.translatable("gui.millenaire_armies.action.create_army");
     private static final Component RECRUIT = Component.translatable("gui.millenaire_armies.action.recruit");
+    private static final Component ASSIGN_HIRED = Component.translatable("gui.millenaire_armies.action.assign_hired");
+    private static final Component RECRUIT_UNAVAILABLE =
+            Component.translatable("gui.millenaire_armies.action.recruit_unavailable");
+    private static final Component FOUND_REALM = Component.translatable("gui.millenaire_armies.action.found_realm");
+    private static final Component TAX_DOWN = Component.translatable("gui.millenaire_armies.action.tax_down");
+    private static final Component TAX_UP = Component.translatable("gui.millenaire_armies.action.tax_up");
     private static final Component RETRY = Component.translatable("gui.millenaire_armies.action.retry");
     private static final Component SYNC_TIMEOUT = Component.translatable("gui.millenaire_armies.state.timeout");
     private static final Component COMMAND_UNAVAILABLE = Component.translatable("gui.millenaire_armies.command.unavailable");
@@ -75,11 +83,17 @@ public final class MillenaireCommandScreen extends Screen {
     private static final Component SECTION_SETTLEMENTS = Component.translatable("gui.millenaire_armies.section.settlements");
     private static final Component LABEL_RECRUITS = Component.translatable("gui.millenaire_armies.section.recruits");
     private static final Component LABEL_TARGET_ARMY = Component.translatable("gui.millenaire_armies.label.target_army");
+    private static final Component LABEL_TREASURY = Component.translatable("gui.millenaire_armies.label.treasury");
+    private static final Component LABEL_TAX_RATE = Component.translatable("gui.millenaire_armies.label.tax_rate");
+    private static final Component LABEL_CAPTURES = Component.translatable("gui.millenaire_armies.label.captures");
+    private static final Component LABEL_RESOURCES = Component.translatable("gui.millenaire_armies.label.resources");
+    private static final Component SECTION_GOVERNANCE = Component.translatable("gui.millenaire_armies.section.governance");
+    private static final Component SECTION_ECONOMY = Component.translatable("gui.millenaire_armies.section.economy");
 
     private static final Component[] RELATIONS = translatedArray("gui.millenaire_armies.relation.",
             "hostile", "neutral", "friendly", "allied", "vassal");
     private static final Component[] ORDER_TYPES = translatedArray("gui.millenaire_armies.order.",
-            "hold", "move", "rally", "logistics");
+            "hold", "move", "rally", "logistics", "attack");
     private static final Component[] LOGISTICS_STATES = translatedArray("gui.millenaire_armies.logistics.",
             "pending", "assigned", "in_transit", "fulfilled", "cancelled");
 
@@ -106,6 +120,7 @@ public final class MillenaireCommandScreen extends Screen {
     private static final int ORDER_MOVE = 1;
     private static final int ORDER_RALLY = 2;
     private static final int ORDER_LOGISTICS = 3;
+    private static final int ORDER_ATTACK = 4;
 
     private final int[] scrollRows = new int[StrategicTab.VALUES.length];
     private final Button[] tabButtons = new Button[StrategicTab.VALUES.length];
@@ -163,15 +178,20 @@ public final class MillenaireCommandScreen extends Screen {
     private long feedbackUntilMillis;
     private long cancelConfirmUntilMillis;
     private int lastAcknowledgementId;
+    private int lastRealmAcknowledgementId;
 
     private Button holdButton;
     private Button moveButton;
     private Button rallyButton;
     private Button logisticsButton;
+    private Button attackButton;
     private Button cancelButton;
     private Button priorityButton;
     private Button createArmyButton;
     private Button recruitButton;
+    private Button foundRealmButton;
+    private Button taxDownButton;
+    private Button taxUpButton;
     private Button retryButton;
     private Button closeButton;
     private int syncTicks;
@@ -200,7 +220,7 @@ public final class MillenaireCommandScreen extends Screen {
         contentHeight = panelHeight - 105;
         listWidth = Math.max(126, Math.min(295, contentWidth * 42 / 100));
 
-        tabWidth = Math.max(48, (panelWidth - 18) / StrategicTab.VALUES.length);
+        tabWidth = Math.max(40, (panelWidth - 18) / StrategicTab.VALUES.length);
         tabsX = panelX + 9;
         for (int i = 0; i < StrategicTab.VALUES.length; i++) {
             final StrategicTab target = StrategicTab.VALUES[i];
@@ -212,12 +232,13 @@ public final class MillenaireCommandScreen extends Screen {
 
         int actionY = panelY + panelHeight - 30;
         int actionAreaWidth = panelWidth - 86;
-        int orderButtonWidth = Math.max(42, (actionAreaWidth - 6) / 4);
+        int orderButtonWidth = Math.max(38, (actionAreaWidth - 8) / 5);
         int actionX = panelX + 10;
         holdButton = actionButton("gui.millenaire_armies.action.hold", actionX, actionY, orderButtonWidth, ORDER_HOLD);
         moveButton = actionButton("gui.millenaire_armies.action.move", actionX + orderButtonWidth + 2, actionY, orderButtonWidth, ORDER_MOVE);
         rallyButton = actionButton("gui.millenaire_armies.action.rally", actionX + (orderButtonWidth + 2) * 2, actionY, orderButtonWidth, ORDER_RALLY);
         logisticsButton = actionButton("gui.millenaire_armies.action.logistics", actionX + (orderButtonWidth + 2) * 3, actionY, orderButtonWidth, ORDER_LOGISTICS);
+        attackButton = actionButton("gui.millenaire_armies.action.attack", actionX + (orderButtonWidth + 2) * 4, actionY, orderButtonWidth, ORDER_ATTACK);
 
         int secondaryButtonWidth = Math.max(72, (actionAreaWidth - 4) / 2);
         cancelButton = addRenderableWidget(Button.builder(
@@ -233,6 +254,16 @@ public final class MillenaireCommandScreen extends Screen {
                 .build());
         recruitButton = addRenderableWidget(Button.builder(RECRUIT, ignored -> recruitSelected())
                 .bounds(actionX + secondaryButtonWidth + 4, actionY, secondaryButtonWidth, 20)
+                .build());
+        int realmButtonWidth = Math.max(48, (actionAreaWidth - 8) / 3);
+        foundRealmButton = addRenderableWidget(Button.builder(FOUND_REALM, ignored -> foundRealm())
+                .bounds(actionX, actionY, realmButtonWidth, 20)
+                .build());
+        taxDownButton = addRenderableWidget(Button.builder(TAX_DOWN, ignored -> adjustTax(-5))
+                .bounds(actionX + realmButtonWidth + 4, actionY, realmButtonWidth, 20)
+                .build());
+        taxUpButton = addRenderableWidget(Button.builder(TAX_UP, ignored -> adjustTax(5))
+                .bounds(actionX + (realmButtonWidth + 4) * 2, actionY, realmButtonWidth, 20)
                 .build());
         retryButton = addRenderableWidget(Button.builder(RETRY, ignored -> retrySync())
                 .bounds(actionX, actionY, secondaryButtonWidth, 20)
@@ -283,6 +314,7 @@ public final class MillenaireCommandScreen extends Screen {
             graphics.enableScissor(contentX + 1, contentY + 1, contentX + contentWidth - 1, contentY + contentHeight - 1);
             switch (tab) {
                 case OVERVIEW -> renderOverview(graphics);
+                case REALM -> renderRealm(graphics);
                 case RECRUITMENT -> renderRecruitment(graphics, mouseX, mouseY);
                 case FACTIONS -> renderFactions(graphics, mouseX, mouseY);
                 case ARMIES -> renderArmies(graphics, mouseX, mouseY);
@@ -319,12 +351,11 @@ public final class MillenaireCommandScreen extends Screen {
 
         graphics.fill(panelX + 7, panelY + 7, panelX + panelWidth - 7, panelY + 34, CARD);
         graphics.fill(panelX + 7, panelY + 7, panelX + 11, panelY + 34, ACCENT);
-        graphics.fill(panelX + 16, panelY + 13, panelX + 26, panelY + 23, ACCENT_DIM);
-        graphics.fill(panelX + 18, panelY + 11, panelX + 24, panelY + 25, GOLD);
-        graphics.fill(panelX + 20, panelY + 13, panelX + 22, panelY + 23, PANEL);
-        graphics.drawString(font, TITLE, panelX + 34, panelY + 15, GOLD, true);
+        graphics.drawString(font, TITLE, panelX + 18, panelY + 15, GOLD, true);
 
-        String realm = safe(cachedMirror.playerFactionName());
+        String realm = cachedMirror.realmFounded()
+                ? safe(cachedMirror.realmName())
+                : safe(cachedMirror.playerFactionName());
         int statusColor = cachedMirror.isReady() ? ACCENT : DANGER;
         int realmRight = panelX + panelWidth - 14;
         graphics.fill(realmRight - 5, panelY + 16, realmRight - 2, panelY + 19, statusColor);
@@ -352,10 +383,14 @@ public final class MillenaireCommandScreen extends Screen {
         skinButton(graphics, moveButton, mouseX, mouseY, selectedOrder == ORDER_MOVE, false, false);
         skinButton(graphics, rallyButton, mouseX, mouseY, selectedOrder == ORDER_RALLY, false, false);
         skinButton(graphics, logisticsButton, mouseX, mouseY, selectedOrder == ORDER_LOGISTICS, false, false);
+        skinButton(graphics, attackButton, mouseX, mouseY, selectedOrder == ORDER_ATTACK, false, true);
         skinButton(graphics, cancelButton, mouseX, mouseY, false, false, true);
         skinButton(graphics, priorityButton, mouseX, mouseY, false, false, false);
         skinButton(graphics, createArmyButton, mouseX, mouseY, false, true, false);
         skinButton(graphics, recruitButton, mouseX, mouseY, false, true, false);
+        skinButton(graphics, foundRealmButton, mouseX, mouseY, false, true, false);
+        skinButton(graphics, taxDownButton, mouseX, mouseY, false, false, false);
+        skinButton(graphics, taxUpButton, mouseX, mouseY, false, false, false);
         skinButton(graphics, retryButton, mouseX, mouseY, false, true, false);
         skinButton(graphics, closeButton, mouseX, mouseY, false, false, false);
     }
@@ -377,12 +412,16 @@ public final class MillenaireCommandScreen extends Screen {
         int buttonHeight = button.getHeight();
         boolean hovered = mouseX >= x && mouseX < x + buttonWidth
                 && mouseY >= y && mouseY < y + buttonHeight;
-        int fill = !button.active ? 0xFF19232B : selected ? SELECTED : hovered ? HOVER : CARD_SOFT;
-        int border = danger ? DANGER : primary ? ACCENT : selected ? GOLD : BORDER_DARK;
+        boolean focused = button.isFocused();
+        int fill = !button.active ? 0xFF19232B : selected ? SELECTED : hovered || focused ? HOVER : CARD_SOFT;
+        int border = focused ? GOLD : danger ? DANGER : primary ? ACCENT : selected ? GOLD : BORDER_DARK;
         int labelColor = !button.active ? DISABLED : danger ? DANGER : selected || primary ? GOLD : TEXT;
 
         graphics.fill(x, y, x + buttonWidth, y + buttonHeight, fill);
         outline(graphics, x, y, buttonWidth, buttonHeight, border);
+        if (focused && button.active) {
+            outline(graphics, x + 2, y + 2, buttonWidth - 4, buttonHeight - 4, ACCENT);
+        }
         if (selected || primary) {
             graphics.fill(x + 1, y + 1, x + 3, y + buttonHeight - 1, selected ? GOLD : ACCENT);
         }
@@ -421,6 +460,77 @@ public final class MillenaireCommandScreen extends Screen {
         drawOverviewArmy(graphics, contentX + half + 15, boxY + 17, detailStep);
     }
 
+    private void renderRealm(GuiGraphics graphics) {
+        int inset = 8;
+        if (!cachedMirror.realmFounded()) {
+            graphics.drawCenteredString(
+                    font,
+                    Component.translatable("gui.millenaire_armies.realm.not_founded"),
+                    contentX + contentWidth / 2,
+                    contentY + 30,
+                    GOLD);
+            graphics.drawCenteredString(
+                    font,
+                    Component.translatable("gui.millenaire_armies.realm.found_hint"),
+                    contentX + contentWidth / 2,
+                    contentY + 48,
+                    MUTED);
+            int capital = firstControlledSettlement();
+            Component candidate = capital < 0
+                    ? Component.translatable("gui.millenaire_armies.realm.no_capital")
+                    : Component.translatable(
+                            "gui.millenaire_armies.realm.capital_candidate",
+                            safe(cachedMirror.settlementName(capital)),
+                            cachedMirror.settlementPopulation(capital));
+            graphics.drawCenteredString(
+                    font,
+                    candidate,
+                    contentX + contentWidth / 2,
+                    contentY + 74,
+                    capital < 0 ? DANGER : TEXT);
+            graphics.drawCenteredString(
+                    font,
+                    Component.translatable("gui.millenaire_armies.realm.capture_locked"),
+                    contentX + contentWidth / 2,
+                    contentY + 98,
+                    MUTED);
+            return;
+        }
+
+        int gap = 7;
+        int half = (contentWidth - gap) / 2;
+        sectionBox(graphics, contentX, contentY, half, contentHeight, SECTION_GOVERNANCE);
+        sectionBox(graphics, contentX + half + gap, contentY, half, contentHeight, SECTION_ECONOMY);
+        int step = Math.max(13, Math.min(18, (contentHeight - 32) / 7));
+        int left = contentX + inset;
+        int right = contentX + half + gap + inset;
+        int y = contentY + 22;
+        graphics.drawString(font, clip(safe(cachedMirror.realmName()), half - 20), left, y, GOLD, true);
+        drawPair(graphics, left, y + step, LABEL_CAPITAL, safe(cachedMirror.realmCapitalName()));
+        drawPair(graphics, left, y + step * 2, LABEL_SETTLEMENTS, integer(cachedMirror.realmSettlementCount()));
+        drawPair(graphics, left, y + step * 3, LABEL_POPULATION, integer(cachedMirror.realmPopulation()));
+        drawPair(graphics, left, y + step * 4, LABEL_CAPTURES, integer(cachedMirror.realmCapturedSettlements()));
+        drawPair(graphics, left, y + step * 5, LABEL_TAX_RATE, percent(cachedMirror.realmTaxRate()));
+        drawPair(graphics, left, y + step * 6, LABEL_TREASURY, Long.toString(cachedMirror.realmTreasury()));
+
+        graphics.drawString(font, LABEL_RESOURCES, right, y, GOLD, true);
+        drawPair(graphics, right, y + step, Component.translatable("gui.millenaire_armies.resource.food"),
+                integer(cachedMirror.realmFood()));
+        drawPair(graphics, right, y + step * 2, Component.translatable("gui.millenaire_armies.resource.iron"),
+                integer(cachedMirror.realmIron()));
+        drawPair(graphics, right, y + step * 3, Component.translatable("gui.millenaire_armies.resource.leather"),
+                integer(cachedMirror.realmLeather()));
+        drawPair(graphics, right, y + step * 4, Component.translatable("gui.millenaire_armies.resource.arrows"),
+                integer(cachedMirror.realmArrows()));
+        graphics.drawString(
+                font,
+                clip(Component.translatable("gui.millenaire_armies.realm.tax_hint").getString(), half - 18),
+                right,
+                y + step * 6,
+                MUTED,
+                false);
+    }
+
     private void renderRecruitment(GuiGraphics graphics, int mouseX, int mouseY) {
         int split = contentX + listWidth;
         graphics.fill(contentX + 1, contentY + 1, split, contentY + contentHeight - 1, PANEL_ALT);
@@ -452,7 +562,10 @@ public final class MillenaireCommandScreen extends Screen {
                 }
                 graphics.drawString(font, clip(safe(cachedMirror.settlementName(row)), listWidth - 24),
                         contentX + 11, y + 5, selected ? GOLD : TEXT, true);
-                Component summary = Component.translatable("gui.millenaire_armies.summary.settlement",
+                Component summary = Component.translatable(
+                        cachedMirror.settlementControlled(row)
+                                ? "gui.millenaire_armies.summary.settlement.controlled"
+                                : "gui.millenaire_armies.summary.settlement.independent",
                         cachedMirror.settlementPopulation(row),
                         cachedMirror.settlementAvailableRecruitCount(row));
                 graphics.drawString(font, clip(summary.getString(), listWidth - 24),
@@ -465,7 +578,7 @@ public final class MillenaireCommandScreen extends Screen {
         int rightX = split + 2;
         int rightWidth = contentX + contentWidth - rightX;
         if (!hasSelectedSettlement) {
-            graphics.drawCenteredString(font, NO_RECRUITS,
+            graphics.drawCenteredString(font, SELECT_SETTLEMENT,
                     rightX + rightWidth / 2, contentY + contentHeight / 2, MUTED);
             return;
         }
@@ -495,19 +608,24 @@ public final class MillenaireCommandScreen extends Screen {
                 int textX = rightX + 25;
                 graphics.drawString(font, clip(safe(cachedMirror.recruitName(row)), rightWidth - 38),
                         textX, y + 5, selected ? GOLD : TEXT, true);
-                Component summary = Component.translatable("gui.millenaire_armies.summary.recruit",
-                        safe(cachedMirror.recruitRole(row)), cachedMirror.recruitStrength(row));
+                Component summary = recruitSummary(row);
                 graphics.drawString(font, clip(summary.getString(), rightWidth - 38),
                         textX, y + 17, MUTED, false);
             }
         }
 
-        Component state = !hasSelectedArmy
-                ? SELECT_ARMY
-                : selectedRecruitCount == 0
-                        ? SELECT_RECRUITS
-                        : Component.translatable("gui.millenaire_armies.recruit.ready",
-                                selectedRecruitCount, safe(selectedArmyName()));
+        Component state;
+        if (selectedRecruitCount == 0) {
+            state = SELECT_RECRUITS;
+        } else if (!selectedSettlementControlled()) {
+            int selected = singleSelectedRecruitRow();
+            state = selected < 0 ? SELECT_RECRUITS : recruitSummary(selected);
+        } else if (!hasSelectedArmy) {
+            state = SELECT_ARMY;
+        } else {
+            state = Component.translatable("gui.millenaire_armies.recruit.ready",
+                    selectedRecruitCount, safe(selectedArmyName()));
+        }
         graphics.drawString(font, state, split + 8, contentY + contentHeight - 12, GOLD, false);
     }
 
@@ -797,7 +915,7 @@ public final class MillenaireCommandScreen extends Screen {
     }
 
     private void createArmy() {
-        boolean requested = hasSelectedSettlement && ArmyClientState.current().requestCreateArmy(
+        boolean requested = selectedSettlementControlled() && ArmyClientState.current().requestCreateArmy(
                 selectedSettlementMost, selectedSettlementLeast);
         showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
     }
@@ -808,13 +926,40 @@ public final class MillenaireCommandScreen extends Screen {
     }
 
     private void recruitSelected() {
-        boolean requested = hasSelectedArmy && hasSelectedSettlement && selectedRecruitCount > 0
-                && ArmyClientState.current().requestRecruitUnits(
-                        selectedArmyId,
-                        selectedSettlementMost,
-                        selectedSettlementLeast,
-                        selectedRecruitCount,
-                        selectedRecruitPayload());
+        boolean requested;
+        if (selectedSettlementControlled()) {
+            requested = hasSelectedArmy && selectedRecruitCount > 0
+                    && ArmyClientState.current().requestRecruitUnits(
+                            selectedArmyId,
+                            selectedSettlementMost,
+                            selectedSettlementLeast,
+                            selectedRecruitCount,
+                            selectedRecruitPayload());
+        } else {
+            int row = singleSelectedRecruitRow();
+            int mode = row < 0 ? ArmyRosterSnapshotPayload.RECRUIT_MODE_UNAVAILABLE : cachedMirror.recruitMode(row);
+            requested = row >= 0
+                    && (mode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRE_AVAILABLE
+                            || mode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRED)
+                    && ArmyClientState.current().requestHireRecruit(
+                            cachedMirror.recruitUuidMost(row), cachedMirror.recruitUuidLeast(row));
+        }
+        showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
+    }
+
+    private void foundRealm() {
+        int capital = firstControlledSettlement();
+        boolean requested = capital >= 0
+                && ArmyClientState.current().requestFoundRealm(
+                        cachedMirror.settlementUuidMost(capital),
+                        cachedMirror.settlementUuidLeast(capital));
+        showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
+    }
+
+    private void adjustTax(int delta) {
+        int target = Math.max(0, Math.min(25, cachedMirror.realmTaxRate() + delta));
+        boolean requested = target != cachedMirror.realmTaxRate()
+                && ArmyClientState.current().requestSetRealmTax(target);
         showFeedback(requested ? COMMAND_SENT : COMMAND_UNAVAILABLE);
     }
 
@@ -877,6 +1022,7 @@ public final class MillenaireCommandScreen extends Screen {
         validateSelection();
         refreshSelectionText();
         refreshAcknowledgement();
+        refreshRealmAcknowledgement();
         updateButtons();
     }
 
@@ -950,14 +1096,52 @@ public final class MillenaireCommandScreen extends Screen {
         setState(moveButton, armyActions, tab == StrategicTab.ARMIES);
         setState(rallyButton, armyActions, tab == StrategicTab.ARMIES);
         setState(logisticsButton, armyActions, tab == StrategicTab.ARMIES);
+        setState(attackButton, armyActions, tab == StrategicTab.ARMIES);
         // These intents do not exist server-side yet, so the UI does not present pretend actions.
         setState(cancelButton, false, false);
         setState(priorityButton, false, false);
         setState(createArmyButton, cachedMirror.isReady() && hasSelectedSettlement,
                 tab == StrategicTab.RECRUITMENT);
-        setState(recruitButton,
-                cachedMirror.isReady() && hasSelectedSettlement && hasSelectedArmy && selectedRecruitCount > 0,
+        boolean controlledSettlement = selectedSettlementControlled();
+        createArmyButton.active = cachedMirror.isReady() && controlledSettlement;
+        int singleRecruit = singleSelectedRecruitRow();
+        int recruitMode = singleRecruit < 0
+                ? ArmyRosterSnapshotPayload.RECRUIT_MODE_UNAVAILABLE
+                : cachedMirror.recruitMode(singleRecruit);
+        boolean canHire = !controlledSettlement
+                && singleRecruit >= 0
+                && (recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRE_AVAILABLE
+                        || recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRED);
+        boolean canAssign = controlledSettlement && hasSelectedArmy && selectedRecruitCount > 0;
+        setState(recruitButton, cachedMirror.isReady() && (canHire || canAssign),
                 tab == StrategicTab.RECRUITMENT);
+        if (controlledSettlement) {
+            recruitButton.setMessage(RECRUIT);
+        } else if (recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRED) {
+            recruitButton.setMessage(ASSIGN_HIRED);
+        } else if (recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRE_AVAILABLE) {
+            recruitButton.setMessage(Component.translatable(
+                    "gui.millenaire_armies.action.hire", cachedMirror.recruitCost(singleRecruit)));
+        } else if (recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_REPUTATION_LOCKED) {
+            recruitButton.setMessage(Component.translatable(
+                    "gui.millenaire_armies.action.reputation_required", 4096));
+        } else if (recruitMode == ArmyRosterSnapshotPayload.RECRUIT_MODE_FUNDS_LOCKED) {
+            recruitButton.setMessage(Component.translatable(
+                    "gui.millenaire_armies.action.deniers_required", cachedMirror.recruitCost(singleRecruit)));
+        } else {
+            recruitButton.setMessage(RECRUIT_UNAVAILABLE);
+        }
+        boolean realmTab = tab == StrategicTab.REALM;
+        int capital = firstControlledSettlement();
+        setState(foundRealmButton,
+                cachedMirror.isReady() && !cachedMirror.realmFounded() && capital >= 0,
+                realmTab && !cachedMirror.realmFounded());
+        setState(taxDownButton,
+                cachedMirror.isReady() && cachedMirror.realmFounded() && cachedMirror.realmTaxRate() > 0,
+                realmTab && cachedMirror.realmFounded());
+        setState(taxUpButton,
+                cachedMirror.isReady() && cachedMirror.realmFounded() && cachedMirror.realmTaxRate() < 25,
+                realmTab && cachedMirror.realmFounded());
         setState(retryButton, !cachedMirror.isReady(), !cachedMirror.isReady());
     }
 
@@ -1010,10 +1194,22 @@ public final class MillenaireCommandScreen extends Screen {
         return -1;
     }
 
+    private int firstControlledSettlement() {
+        for (int row = 0; row < cachedMirror.settlementCount(); row++) {
+            if (cachedMirror.settlementControlled(row)) return row;
+        }
+        return -1;
+    }
+
     private boolean settlementSelected(int row) {
         return hasSelectedSettlement
                 && cachedMirror.settlementUuidMost(row) == selectedSettlementMost
                 && cachedMirror.settlementUuidLeast(row) == selectedSettlementLeast;
+    }
+
+    private boolean selectedSettlementControlled() {
+        int row = findSettlementIndex(selectedSettlementMost, selectedSettlementLeast);
+        return row >= 0 && cachedMirror.settlementControlled(row);
     }
 
     private boolean recruitInSelectedSettlement(int row) {
@@ -1072,7 +1268,12 @@ public final class MillenaireCommandScreen extends Screen {
                 return;
             }
         }
-        if (selectedRecruitCount < ArmiesProtocol.MAX_RECRUITS_PER_INTENT) {
+        if (!selectedSettlementControlled()) {
+            selectedRecruitCount = 0;
+            selectedRecruitBits[0] = most;
+            selectedRecruitBits[1] = least;
+            selectedRecruitCount = 1;
+        } else if (selectedRecruitCount < ArmiesProtocol.MAX_RECRUITS_PER_INTENT) {
             selectedRecruitBits[selectedRecruitCount * 2] = most;
             selectedRecruitBits[selectedRecruitCount * 2 + 1] = least;
             selectedRecruitCount++;
@@ -1111,6 +1312,42 @@ public final class MillenaireCommandScreen extends Screen {
         return row < 0 ? "" : cachedMirror.armyName(row);
     }
 
+    private int singleSelectedRecruitRow() {
+        if (selectedRecruitCount != 1) return -1;
+        long most = selectedRecruitBits[0];
+        long least = selectedRecruitBits[1];
+        for (int row = 0; row < cachedMirror.recruitCount(); row++) {
+            if (recruitInSelectedSettlement(row)
+                    && cachedMirror.recruitUuidMost(row) == most
+                    && cachedMirror.recruitUuidLeast(row) == least) {
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    private Component recruitSummary(int row) {
+        String role = safe(cachedMirror.recruitRole(row));
+        int strength = cachedMirror.recruitStrength(row);
+        return switch (cachedMirror.recruitMode(row)) {
+            case ArmyRosterSnapshotPayload.RECRUIT_MODE_CONTROLLED -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.controlled", role, strength);
+            case ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRED -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.hired", role, strength);
+            case ArmyRosterSnapshotPayload.RECRUIT_MODE_HIRE_AVAILABLE -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.hire",
+                    role, strength, cachedMirror.recruitCost(row), cachedMirror.recruitReputation(row));
+            case ArmyRosterSnapshotPayload.RECRUIT_MODE_REPUTATION_LOCKED -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.reputation_locked",
+                    role, cachedMirror.recruitReputation(row), 4096);
+            case ArmyRosterSnapshotPayload.RECRUIT_MODE_FUNDS_LOCKED -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.funds_locked",
+                    role, cachedMirror.recruitCost(row));
+            default -> Component.translatable(
+                    "gui.millenaire_armies.summary.recruit.unavailable", role);
+        };
+    }
+
     private void refreshAcknowledgement() {
         int actionId = cachedMirror.acknowledgedActionId();
         if (actionId <= lastAcknowledgementId) return;
@@ -1121,10 +1358,21 @@ public final class MillenaireCommandScreen extends Screen {
                 && cachedMirror.armyCount() > 0) {
             selectedArmyId = cachedMirror.armyId(cachedMirror.armyCount() - 1);
             hasSelectedArmy = true;
+            rosterColumn = 1;
         }
         Component message = switch (result) {
-            case ArmiesProtocol.RESULT_ACCEPTED -> Component.translatable(
-                    "gui.millenaire_armies.result.accepted", cachedMirror.acknowledgedAffected());
+            case ArmiesProtocol.RESULT_ACCEPTED -> switch (cachedMirror.acknowledgedAction()) {
+                case ArmiesProtocol.ACTION_CREATE_ARMY -> Component.translatable(
+                        "gui.millenaire_armies.result.created");
+                case ArmiesProtocol.ACTION_RECRUIT -> Component.translatable(
+                        "gui.millenaire_armies.result.recruited", cachedMirror.acknowledgedAffected());
+                case ArmiesProtocol.ACTION_ISSUE_ORDER -> Component.translatable(
+                        "gui.millenaire_armies.result.order_accepted");
+                case ArmiesProtocol.ACTION_HIRE -> Component.translatable(
+                        "gui.millenaire_armies.result.hired");
+                default -> Component.translatable(
+                        "gui.millenaire_armies.result.accepted", cachedMirror.acknowledgedAffected());
+            };
             case ArmiesProtocol.RESULT_STALE -> Component.translatable("gui.millenaire_armies.result.stale");
             case ArmiesProtocol.RESULT_PERMISSION_DENIED -> Component.translatable(
                     "gui.millenaire_armies.result.permission_denied");
@@ -1138,8 +1386,34 @@ public final class MillenaireCommandScreen extends Screen {
         showFeedback(message);
     }
 
+    private void refreshRealmAcknowledgement() {
+        int actionId = cachedMirror.acknowledgedRealmActionId();
+        if (actionId <= lastRealmAcknowledgementId) return;
+        lastRealmAcknowledgementId = actionId;
+        Component message = switch (cachedMirror.acknowledgedRealmResult()) {
+            case ArmiesProtocol.RESULT_ACCEPTED -> cachedMirror.acknowledgedRealmAction()
+                    == ru.kaiserroman.millenairearmies.network.RealmActionIntent.ACTION_FOUND
+                            ? Component.translatable("gui.millenaire_armies.result.realm_founded")
+                            : Component.translatable("gui.millenaire_armies.result.tax_updated");
+            case ArmiesProtocol.RESULT_STALE -> Component.translatable("gui.millenaire_armies.result.stale");
+            case ArmiesProtocol.RESULT_PERMISSION_DENIED ->
+                    Component.translatable("gui.millenaire_armies.result.realm_permission_denied");
+            case ArmiesProtocol.RESULT_NOT_FOUND -> Component.translatable("gui.millenaire_armies.result.not_found");
+            case ArmiesProtocol.RESULT_LIMIT_REACHED ->
+                    Component.translatable("gui.millenaire_armies.result.realm_exists");
+            default -> Component.translatable("gui.millenaire_armies.result.invalid");
+        };
+        showFeedback(message);
+    }
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        boolean activationKey = keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_ENTER;
+        if (activationKey && getFocused() instanceof Button focusedButton && focusedButton.visible) {
+            // Preserve vanilla keyboard activation for the currently focused command button.
+            // Recruitment row toggling below must not swallow Enter/Space from that widget.
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
         if (tab == StrategicTab.RECRUITMENT
                 && (keyCode == GLFW.GLFW_KEY_LEFT || keyCode == GLFW.GLFW_KEY_RIGHT)
                 && !hasControlDown()) {

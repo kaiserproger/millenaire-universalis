@@ -5,9 +5,9 @@ package ru.kaiserroman.millenairearmies.server.logistics;
  *
  * <p>Implementations run only on the owning server thread. A negative stock means that the source
  * is temporarily unavailable (for example, one of its chunks is unloaded), so the previous
- * snapshot must be retained. This boundary is intentionally read-only: physical dispatch and
- * delivery require a persisted idempotent shipment/WAL and component-aware courier inventory and
- * are outside the current safe slice.</p>
+ * snapshot must be retained. This boundary is intentionally read-only; strategic dispatch uses a
+ * separate persisted {@link SupplyMutationSink} commit boundary and is not represented as a
+ * physical courier/block-entity transaction.</p>
  */
 public interface SupplyInventoryAccess {
     int UNAVAILABLE = -1;

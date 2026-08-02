@@ -40,6 +40,24 @@ tasks.register('runSupplyPublisherSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runSettlementEconomySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs persisted NPC-settlement economy, trade, shortage and allocation self-tests.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngineSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPlayerRealmPersistenceSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks player realm identity, tax, treasury, conquest and NBT round-trip.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PlayerRealmSavedDataSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runNetworkStateSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs bounded armies network, metadata and primitive client mirror self-tests.'
@@ -71,7 +89,8 @@ tasks.register('validateArmyUiResources', JavaExec) {
 }
 
 tasks.named('check') {
-    dependsOn 'runArmyUiStateSelfTest', 'validateArmyUiResources'
+    dependsOn 'runArmyUiStateSelfTest', 'validateArmyUiResources', 'runPlayerRealmPersistenceSelfTest',
+            'runFormationCoordinatorSelfTest'
 }
 
 tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
@@ -79,6 +98,15 @@ tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
     description = 'Runs primitive army order revision and execution acknowledgement self-tests.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runFormationCoordinatorSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks compact formation slots, assembly gating, cohesion and revision reset.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyFormationCoordinatorSelfTest'
     jvmArgs '-ea'
     dependsOn classes
 }

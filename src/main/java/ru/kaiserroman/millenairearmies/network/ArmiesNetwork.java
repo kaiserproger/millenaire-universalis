@@ -12,6 +12,7 @@ import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
 import ru.kaiserroman.millenairearmies.client.state.ClientArmyState;
 import ru.kaiserroman.millenairearmies.client.state.ClientFactionMetadataState;
 import ru.kaiserroman.millenairearmies.client.state.ClientArmyRosterState;
+import ru.kaiserroman.millenairearmies.client.state.ClientRealmState;
 import ru.kaiserroman.millenairearmies.client.ArmyClientScreenBridge;
 
 /** NeoForge 1.21.1 payload registration and main-thread dispatch. */
@@ -28,7 +29,9 @@ public final class ArmiesNetwork {
         registrar.playToServer(RequestStateIntent.TYPE, RequestStateIntent.STREAM_CODEC, ArmiesNetwork::handleRequest);
         registrar.playToServer(CreateArmyIntent.TYPE, CreateArmyIntent.STREAM_CODEC, ArmiesNetwork::handleCreate);
         registrar.playToServer(RecruitUnitsIntent.TYPE, RecruitUnitsIntent.STREAM_CODEC, ArmiesNetwork::handleRecruit);
+        registrar.playToServer(HireRecruitIntent.TYPE, HireRecruitIntent.STREAM_CODEC, ArmiesNetwork::handleHire);
         registrar.playToServer(IssueOrderIntent.TYPE, IssueOrderIntent.STREAM_CODEC, ArmiesNetwork::handleOrder);
+        registrar.playToServer(RealmActionIntent.TYPE, RealmActionIntent.STREAM_CODEC, ArmiesNetwork::handleRealm);
         registrar.playToClient(
                 ArmyStateSnapshotPayload.TYPE,
                 ArmyStateSnapshotPayload.STREAM_CODEC,
@@ -45,6 +48,10 @@ public final class ArmiesNetwork {
                 ArmyRosterSnapshotPayload.TYPE,
                 ArmyRosterSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> ClientArmyRosterState.INSTANCE.apply(payload));
+        registrar.playToClient(
+                RealmStatePayload.TYPE,
+                RealmStatePayload.STREAM_CODEC,
+                (payload, context) -> ClientRealmState.INSTANCE.apply(payload));
         registrar.playToClient(
                 OpenArmyScreenPayload.TYPE,
                 OpenArmyScreenPayload.STREAM_CODEC,
@@ -64,6 +71,10 @@ public final class ArmiesNetwork {
     }
 
     public static void sendRoster(ServerPlayer player, ArmyRosterSnapshotPayload payload) {
+        PacketDistributor.sendToPlayer(player, payload);
+    }
+
+    public static void sendRealm(ServerPlayer player, RealmStatePayload payload) {
         PacketDistributor.sendToPlayer(player, payload);
     }
 
@@ -104,6 +115,16 @@ public final class ArmiesNetwork {
         if (player != null) {
             ServerIntentRouter.dispatch(player, intent);
         }
+    }
+
+    private static void handleHire(HireRecruitIntent intent, IPayloadContext context) {
+        ServerPlayer player = authenticatedPlayer(context);
+        if (player != null) ServerIntentRouter.dispatch(player, intent);
+    }
+
+    private static void handleRealm(RealmActionIntent intent, IPayloadContext context) {
+        ServerPlayer player = authenticatedPlayer(context);
+        if (player != null) ServerIntentRouter.dispatch(player, intent);
     }
 
     private static ServerPlayer authenticatedPlayer(IPayloadContext context) {

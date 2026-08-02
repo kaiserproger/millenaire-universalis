@@ -15,7 +15,7 @@ import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
  * A one-shot public-API Millenaire task that owns navigation only until arrival or abandonment.
  * It contains no pathfinder, target finder, or combat behavior of its own.
  */
-final class StrategicMoveTask extends ProgressAwareTask {
+final class StrategicMoveTask extends ProgressAwareTask implements StrategicRetainedTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
             SarvarMillenaireArmies.MOD_ID, "strategic_move");
     private static final Component LABEL = Component.translatable(
@@ -63,20 +63,24 @@ final class StrategicMoveTask extends ProgressAwareTask {
         sampled = false;
     }
 
-    int unitHandle() {
+    @Override
+    public int unitHandle() {
         return unitHandle;
     }
 
-    int armyHandle() {
+    @Override
+    public int armyHandle() {
         return armyHandle;
     }
 
-    long revision() {
+    @Override
+    public long revision() {
         return revision;
     }
 
     /** Allocation-free cancellation observed by GoalScheduler on the next normal entity tick. */
-    boolean cancel() {
+    @Override
+    public boolean cancel() {
         if (finished) {
             return false;
         }

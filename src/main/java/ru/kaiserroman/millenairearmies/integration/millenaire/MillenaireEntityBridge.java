@@ -110,6 +110,22 @@ public final class MillenaireEntityBridge {
         return size;
     }
 
+    /** Bounded server-thread projection access for retained execution systems. */
+    public MillVillager loadedVillagerAt(int row) {
+        if (row < 0 || row >= size) {
+            throw new IndexOutOfBoundsException("Loaded villager row " + row + " outside 0.." + size);
+        }
+        return villagers[row];
+    }
+
+    /** Village paired with {@link #loadedVillagerAt}; may be null until reconciliation. */
+    public Village loadedVillageAt(int row) {
+        if (row < 0 || row >= size) {
+            throw new IndexOutOfBoundsException("Loaded villager row " + row + " outside 0.." + size);
+        }
+        return villages[row];
+    }
+
     public int unresolvedCount() {
         return unresolved;
     }

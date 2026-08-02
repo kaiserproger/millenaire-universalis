@@ -42,6 +42,11 @@ public final class ArmyPersistenceSelfTest {
         StableDimensionTable dimensions = new StableDimensionTable();
         int overworld = dimensions.intern(Level.OVERWORLD.location());
         int nether = dimensions.intern(Level.NETHER.location());
+        sourceEcs.armyTargetDimension(blue, overworld);
+        sourceEcs.armyTargetDimension(red, nether);
+        sourceEcs.armyHomeVillage(blue, 0x1001L, 0x1002L);
+        sourceEcs.armyTargetVillage(blue, 0x2001L, 0x2002L);
+        sourceEcs.armyHomeVillage(red, 0x3001L, 0x3002L);
         StableItemTable items = new StableItemTable();
         int ironKey = items.intern(ResourceLocation.parse("minecraft:iron_ingot"));
         PackedFactionState factions = new PackedFactionState(2);
@@ -86,6 +91,18 @@ public final class ArmyPersistenceSelfTest {
         check(encoded.getCompound("Armies").getInt("Count") == 2, "army count written");
         check(encoded.getCompound("Units").getInt("Count") == 3, "unit count written");
         check(encoded.getCompound("Commands").getInt("Count") == 2, "command count written");
+        check(encoded.getCompound("Armies").getIntArray("TargetDimensions").length == 2,
+                "army dimensions written");
+        check(encoded.getCompound("Armies").getLongArray("HomeVillageMost").length == 2
+                        && encoded.getCompound("Armies").getLongArray("TargetVillageLeast").length == 2,
+                "army settlement identity columns written");
+
+        CompoundTag legacy = encoded.copy();
+        legacy.putInt("SchemaVersion", 1);
+        legacy.getCompound("Armies").remove("TargetDimensions");
+        ArmySavedData migrated = ArmySavedData.load(binaryRoundTrip(legacy), null);
+        check(migrated.ecs().armyTargetDimension(armyByFaction(migrated.ecs(), 20)) == overworld,
+                "schema-one army dimension defaults to overworld");
 
         ArmySavedData restored = ArmySavedData.load(binaryRoundTrip(encoded), null);
         check(restored.ecs().armySize() == 2, "army count restored");
@@ -106,6 +123,19 @@ public final class ArmyPersistenceSelfTest {
         check(restoredRed != PackedArmyEcs.NO_ARMY, "red restored");
         check(restored.ecs().armyOrder(restoredBlue) == 3, "blue order restored");
         check(restored.ecs().armyState(restoredRed) == 6, "red state restored");
+        check(restored.ecs().armyTargetDimension(restoredBlue) == overworld,
+                "blue target dimension restored");
+        check(restored.ecs().armyTargetDimension(restoredRed) == nether,
+                "red target dimension restored");
+        check(restored.ecs().armyHomeVillageMost(restoredBlue) == 0x1001L
+                        && restored.ecs().armyHomeVillageLeast(restoredBlue) == 0x1002L,
+                "blue home village identity restored");
+        check(restored.ecs().armyTargetVillageMost(restoredBlue) == 0x2001L
+                        && restored.ecs().armyTargetVillageLeast(restoredBlue) == 0x2002L,
+                "blue campaign target village identity restored");
+        check(restored.ecs().armyHomeVillageMost(restoredRed) == 0x3001L
+                        && restored.ecs().armyHomeVillageLeast(restoredRed) == 0x3002L,
+                "red home village identity restored");
         check(restored.ecs().armyUnitCount(restoredBlue) == 1, "blue membership restored");
         check(restored.ecs().armyUnitCount(restoredRed) == 1, "red membership restored");
         check(countUnassigned(restored.ecs()) == 1, "unassigned unit restored");
@@ -165,6 +195,10 @@ public final class ArmyPersistenceSelfTest {
         check(secondRestore.ecs().unitSize() == 3, "second round-trip units");
         check(secondRestore.commands().size() == 3, "second round-trip commands");
         check(secondRestore.logistics().size() == 1, "second round-trip logistics");
+        int secondBlue = armyByFaction(secondRestore.ecs(), 20);
+        check(secondRestore.ecs().armyTargetVillageMost(secondBlue) == 0x2001L
+                        && secondRestore.ecs().armyTargetVillageLeast(secondBlue) == 0x2002L,
+                "second round-trip campaign target village");
     }
 
     private static void corruptLengthsAndUnknownVersionsAreRejected() {
@@ -177,6 +211,17 @@ public final class ArmyPersistenceSelfTest {
         CompoundTag armies = wrongLength.getCompound("Armies");
         armies.putInt("Count", 1);
         expectIllegalArgument(() -> ArmySavedData.load(wrongLength, null), "column mismatch rejected");
+
+        CompoundTag invalidDimension = new ArmySavedData().save(new CompoundTag(), null);
+        invalidDimension.getCompound("Armies").putInt("Count", 1);
+        invalidDimension.getCompound("Armies").putIntArray("Factions", new int[] {1});
+        invalidDimension.getCompound("Armies").putIntArray("Orders", new int[] {0});
+        invalidDimension.getCompound("Armies").putIntArray("States", new int[] {0});
+        invalidDimension.getCompound("Armies").putIntArray("TargetDimensions", new int[] {99});
+        invalidDimension.getCompound("Armies").putLongArray("Targets", new long[] {0L});
+        expectIllegalArgument(
+                () -> ArmySavedData.load(invalidDimension, null),
+                "unknown army dimension rejected");
     }
 
     private static void signedGenerationHandlesRoundTrip() {

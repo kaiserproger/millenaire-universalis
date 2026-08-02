@@ -8,6 +8,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -16,6 +18,7 @@ import ru.kaiserroman.millenairearmies.lifecycle.ArmyLifecycleService;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesFactionCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesRecruitmentCommands;
+import ru.kaiserroman.millenairearmies.server.command.MillArmiesRealmCommands;
 
 @Mod(SarvarMillenaireArmies.MOD_ID)
 public final class SarvarMillenaireArmies {
@@ -42,8 +45,8 @@ public final class SarvarMillenaireArmies {
     public void onServerStarted(ServerStartedEvent event) {
         if (lifecycle.start(event.getServer())) {
             LOGGER.info(
-                    "Millenaire Armies strategy, recruitment, diplomacy, logistics and networking are ready; entity-side order delegation={}; combat/pathfinding remain Millenaire-owned",
-                    ArmiesConfig.ORDER_EXECUTION_ENABLED ? "experimental opt-in" : "disabled (state-only orders)");
+                    "Millenaire Armies strategy, recruitment, realm economy and networking are ready; physical entity orders={}; navigation/combat use real Millenaire entities",
+                    ArmiesConfig.ORDER_EXECUTION_ENABLED ? "enabled" : "disabled (emergency state-only fallback)");
         }
     }
 
@@ -52,6 +55,7 @@ public final class SarvarMillenaireArmies {
         MillArmiesCommands.register(event.getDispatcher(), lifecycle.commandService());
         MillArmiesFactionCommands.register(event.getDispatcher(), lifecycle.factionProjection());
         MillArmiesRecruitmentCommands.register(event.getDispatcher(), lifecycle.recruitmentService());
+        MillArmiesRealmCommands.register(event.getDispatcher(), lifecycle::realmService);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -67,6 +71,21 @@ public final class SarvarMillenaireArmies {
     @SubscribeEvent
     public void onEntityLeave(EntityLeaveLevelEvent event) {
         lifecycle.entityLeft(event.getEntity(), event.getLevel());
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onLivingDamage(LivingDamageEvent.Post event) {
+        if (event.getEntity() instanceof org.millenaire.entity.MillVillager victim
+                && event.getSource().getEntity() instanceof net.minecraft.world.entity.LivingEntity source) {
+            lifecycle.entityDamaged(victim, source, event.getNewDamage());
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onLivingDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof org.millenaire.entity.MillVillager villager) {
+            lifecycle.entityDied(villager);
+        }
     }
 
     @SubscribeEvent

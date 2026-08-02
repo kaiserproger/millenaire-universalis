@@ -19,7 +19,13 @@ public final class ServerIntentRouter {
         public void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent) {}
 
         @Override
+        public void hireRecruit(ServerPlayer player, HireRecruitIntent intent) {}
+
+        @Override
         public void issueOrder(ServerPlayer player, IssueOrderIntent intent) {}
+
+        @Override
+        public void realmAction(ServerPlayer player, RealmActionIntent intent) {}
     };
 
     private static volatile ServerIntentSink sink = NOOP;
@@ -54,7 +60,15 @@ public final class ServerIntentRouter {
         sink.recruitUnits(player, intent);
     }
 
+    static void dispatch(ServerPlayer player, HireRecruitIntent intent) {
+        sink.hireRecruit(player, intent);
+    }
+
     static void dispatch(ServerPlayer player, IssueOrderIntent intent) {
         sink.issueOrder(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, RealmActionIntent intent) {
+        sink.realmAction(player, intent);
     }
 }

@@ -281,6 +281,16 @@ public final class FactionProjectionService
         return row >= 0 && factionIds[row] == armyFactionId;
     }
 
+    @Override
+    public int factionForVillage(long villageUuidMost, long villageUuidLeast) {
+        Village village = villageIndex.find(villageUuidMost, villageUuidLeast);
+        if (village == null) {
+            return -1;
+        }
+        int row = findCultureRow(village.getCultureId());
+        return row < 0 ? -1 : factionIds[row];
+    }
+
     private int collectCultures(MillenaireVillageIndex villageIndex) {
         int count = 0;
         for (villageCursor.reset(); villageCursor.advance(); ) {

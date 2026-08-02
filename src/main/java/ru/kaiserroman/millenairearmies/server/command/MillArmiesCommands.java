@@ -52,7 +52,11 @@ public final class MillArmiesCommands {
                                 .then(literal("logistics")
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
-                                                        context, service, StrategicArmyOrder.LOGISTICS)))))));
+                                                        context, service, StrategicArmyOrder.LOGISTICS))))
+                                .then(literal("attack")
+                                        .then(argument("position", BlockPosArgument.blockPos())
+                                                .executes(context -> orderAtPosition(
+                                                        context, service, StrategicArmyOrder.ATTACK)))))));
     }
 
     private static int openScreen(CommandContext<CommandSourceStack> context) {
@@ -117,7 +121,11 @@ public final class MillArmiesCommands {
             CommandContext<CommandSourceStack> context, ArmyCommandService service, long packedPosition) {
         CommandSourceStack source = context.getSource();
         int faction = getInteger(context, "faction");
-        long handle = service.createArmy(authority(source), faction, packedPosition);
+        long handle = service.createArmy(
+                authority(source),
+                faction,
+                source.getLevel().dimension().location(),
+                packedPosition);
         if (handle < 0) {
             return failure(source, handle);
         }
@@ -150,7 +158,12 @@ public final class MillArmiesCommands {
         CommandSourceStack source = context.getSource();
         long unsignedArmy = getLong(context, "army");
         int army = (int) unsignedArmy;
-        long result = service.issueOrder(authority(source), army, order, packedPosition);
+        long result = service.issueOrder(
+                authority(source),
+                army,
+                order,
+                source.getLevel().dimension().location(),
+                packedPosition);
         if (result != ArmyCommandService.SUCCESS) {
             return failure(source, result);
         }

@@ -37,7 +37,12 @@ public final class PackedArmyEcs {
     private int[] armyOrder = new int[0];
     private int[] armyState = new int[0];
     private int[] armyUnitCount = new int[0];
+    private int[] armyTargetDimension = new int[0];
     private long[] armyPackedTargetPos = new long[0];
+    private long[] armyHomeVillageMost = new long[0];
+    private long[] armyHomeVillageLeast = new long[0];
+    private long[] armyTargetVillageMost = new long[0];
+    private long[] armyTargetVillageLeast = new long[0];
     private int[] armySlotToDense = new int[0];
     private int[] armySlotGeneration = new int[0];
     private int[] armyFreeSlots = new int[0];
@@ -86,6 +91,14 @@ public final class PackedArmyEcs {
     }
 
     public int createArmy(int factionId, int order, int state, long packedTargetPos) {
+        return createArmy(factionId, order, state, 0, packedTargetPos);
+    }
+
+    public int createArmy(
+            int factionId, int order, int state, int targetDimension, long packedTargetPos) {
+        if (targetDimension < 0) {
+            throw new IllegalArgumentException("Negative army target dimension: " + targetDimension);
+        }
         ensureArmyDenseCapacity(armySize + 1);
         int slot = acquireArmySlot();
         int handle = makeHandle(slot, armySlotGeneration[slot]);
@@ -96,6 +109,7 @@ public final class PackedArmyEcs {
         armyOrder[dense] = order;
         armyState[dense] = state;
         armyUnitCount[dense] = 0;
+        armyTargetDimension[dense] = targetDimension;
         armyPackedTargetPos[dense] = packedTargetPos;
         armySlotToDense[slot] = dense;
         armyStructuralVersion++;
@@ -208,6 +222,49 @@ public final class PackedArmyEcs {
         armyPackedTargetPos[armyDenseOrThrow(handle)] = packedPos;
     }
 
+    public int armyTargetDimension(int handle) {
+        return armyTargetDimension[armyDenseOrThrow(handle)];
+    }
+
+    public void armyTargetDimension(int handle, int dimensionId) {
+        if (dimensionId < 0) {
+            throw new IllegalArgumentException("Negative army target dimension: " + dimensionId);
+        }
+        armyTargetDimension[armyDenseOrThrow(handle)] = dimensionId;
+    }
+
+    public long armyHomeVillageMost(int handle) {
+        return armyHomeVillageMost[armyDenseOrThrow(handle)];
+    }
+
+    public long armyHomeVillageLeast(int handle) {
+        return armyHomeVillageLeast[armyDenseOrThrow(handle)];
+    }
+
+    public void armyHomeVillage(int handle, long uuidMost, long uuidLeast) {
+        int dense = armyDenseOrThrow(handle);
+        armyHomeVillageMost[dense] = uuidMost;
+        armyHomeVillageLeast[dense] = uuidLeast;
+    }
+
+    public long armyTargetVillageMost(int handle) {
+        return armyTargetVillageMost[armyDenseOrThrow(handle)];
+    }
+
+    public long armyTargetVillageLeast(int handle) {
+        return armyTargetVillageLeast[armyDenseOrThrow(handle)];
+    }
+
+    public void armyTargetVillage(int handle, long uuidMost, long uuidLeast) {
+        int dense = armyDenseOrThrow(handle);
+        armyTargetVillageMost[dense] = uuidMost;
+        armyTargetVillageLeast[dense] = uuidLeast;
+    }
+
+    public void clearArmyTargetVillage(int handle) {
+        armyTargetVillage(handle, 0L, 0L);
+    }
+
     public int armyUnitCount(int handle) {
         return armyUnitCount[armyDenseOrThrow(handle)];
     }
@@ -292,7 +349,12 @@ public final class PackedArmyEcs {
         destination.order = armyOrder[dense];
         destination.state = armyState[dense];
         destination.unitCount = armyUnitCount[dense];
+        destination.targetDimension = armyTargetDimension[dense];
         destination.packedTargetPos = armyPackedTargetPos[dense];
+        destination.homeVillageMost = armyHomeVillageMost[dense];
+        destination.homeVillageLeast = armyHomeVillageLeast[dense];
+        destination.targetVillageMost = armyTargetVillageMost[dense];
+        destination.targetVillageLeast = armyTargetVillageLeast[dense];
         return true;
     }
 
@@ -373,7 +435,12 @@ public final class PackedArmyEcs {
             armyOrder[dense] = armyOrder[last];
             armyState[dense] = armyState[last];
             armyUnitCount[dense] = armyUnitCount[last];
+            armyTargetDimension[dense] = armyTargetDimension[last];
             armyPackedTargetPos[dense] = armyPackedTargetPos[last];
+            armyHomeVillageMost[dense] = armyHomeVillageMost[last];
+            armyHomeVillageLeast[dense] = armyHomeVillageLeast[last];
+            armyTargetVillageMost[dense] = armyTargetVillageMost[last];
+            armyTargetVillageLeast[dense] = armyTargetVillageLeast[last];
             armySlotToDense[handleSlot(movedHandle)] = dense;
         }
         armyHandles[last] = 0;
@@ -381,7 +448,12 @@ public final class PackedArmyEcs {
         armyOrder[last] = 0;
         armyState[last] = 0;
         armyUnitCount[last] = 0;
+        armyTargetDimension[last] = 0;
         armyPackedTargetPos[last] = 0L;
+        armyHomeVillageMost[last] = 0L;
+        armyHomeVillageLeast[last] = 0L;
+        armyTargetVillageMost[last] = 0L;
+        armyTargetVillageLeast[last] = 0L;
         armySlotToDense[removedSlot] = -1;
         armySlotGeneration[removedSlot] = nextGeneration(armySlotGeneration[removedSlot]);
         armyFreeSlots[armyFreeCount++] = removedSlot;
@@ -460,7 +532,12 @@ public final class PackedArmyEcs {
         armyOrder = Arrays.copyOf(armyOrder, capacity);
         armyState = Arrays.copyOf(armyState, capacity);
         armyUnitCount = Arrays.copyOf(armyUnitCount, capacity);
+        armyTargetDimension = Arrays.copyOf(armyTargetDimension, capacity);
         armyPackedTargetPos = Arrays.copyOf(armyPackedTargetPos, capacity);
+        armyHomeVillageMost = Arrays.copyOf(armyHomeVillageMost, capacity);
+        armyHomeVillageLeast = Arrays.copyOf(armyHomeVillageLeast, capacity);
+        armyTargetVillageMost = Arrays.copyOf(armyTargetVillageMost, capacity);
+        armyTargetVillageLeast = Arrays.copyOf(armyTargetVillageLeast, capacity);
     }
 
     private void ensureArmySlotCapacity(int required) {
@@ -675,6 +752,39 @@ public final class PackedArmyEcs {
             return owner.armyUnitCount[dense];
         }
 
+        public int targetDimension() {
+            checkActive();
+            return owner.armyTargetDimension[dense];
+        }
+
+        public void targetDimension(int dimensionId) {
+            checkActive();
+            if (dimensionId < 0) {
+                throw new IllegalArgumentException("Negative army target dimension: " + dimensionId);
+            }
+            owner.armyTargetDimension[dense] = dimensionId;
+        }
+
+        public long homeVillageMost() {
+            checkActive();
+            return owner.armyHomeVillageMost[dense];
+        }
+
+        public long homeVillageLeast() {
+            checkActive();
+            return owner.armyHomeVillageLeast[dense];
+        }
+
+        public long targetVillageMost() {
+            checkActive();
+            return owner.armyTargetVillageMost[dense];
+        }
+
+        public long targetVillageLeast() {
+            checkActive();
+            return owner.armyTargetVillageLeast[dense];
+        }
+
         public long packedTargetPos() {
             checkActive();
             return owner.armyPackedTargetPos[dense];
@@ -793,7 +903,12 @@ public final class PackedArmyEcs {
         private int order;
         private int state;
         private int unitCount;
+        private int targetDimension;
         private long packedTargetPos;
+        private long homeVillageMost;
+        private long homeVillageLeast;
+        private long targetVillageMost;
+        private long targetVillageLeast;
 
         private ArmySnapshot() {
         }
@@ -818,9 +933,21 @@ public final class PackedArmyEcs {
             return unitCount;
         }
 
+        public int targetDimension() {
+            return targetDimension;
+        }
+
         public long packedTargetPos() {
             return packedTargetPos;
         }
+
+        public long homeVillageMost() { return homeVillageMost; }
+
+        public long homeVillageLeast() { return homeVillageLeast; }
+
+        public long targetVillageMost() { return targetVillageMost; }
+
+        public long targetVillageLeast() { return targetVillageLeast; }
     }
 
     /** Mutable caller-owned result buffer. */

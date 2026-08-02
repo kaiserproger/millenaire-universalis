@@ -1,9 +1,13 @@
 package ru.kaiserroman.millenairearmies.server.service;
 
 import java.util.Objects;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.Level;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.model.ArmyFormation;
+import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 
 /**
  * Server-authoritative façade for commands and authenticated network requests.
@@ -21,13 +25,16 @@ public final class ArmyCommandService {
     public static final long LIMIT_REACHED = -4L;
     public static final long INVALID_FACTION = -5L;
     public static final long INVALID_ORDER = -6L;
+    public static final long INVALID_FORMATION = -7L;
 
     private MinecraftServer server;
     private PackedArmyEcs ecs;
     private PackedArmyEcs.ArmyCursor armyCursor;
     private PackedArmyControllers controllers;
+    private StableDimensionTable dimensions;
     private DirtyMarker dirtyMarker;
     private FactionValidator factionValidator = ArmyCommandService::defaultFactionId;
+    private ArmyOrderValidator armyOrderValidator = ArmyOrderValidator.ALLOW_ALL;
     private ArmyOrderCommitListener orderCommitListener = ArmyOrderCommitListener.NOOP;
 
     /** Attaches the single persisted stores. Called once from lifecycle on the server thread. */
@@ -35,6 +42,7 @@ public final class ArmyCommandService {
             MinecraftServer startingServer,
             PackedArmyEcs persistedEcs,
             PackedArmyControllers persistedControllers,
+            StableDimensionTable persistedDimensions,
             DirtyMarker persistedDirtyMarker) {
         Objects.requireNonNull(startingServer, "startingServer");
         if (server == startingServer) {
@@ -45,10 +53,12 @@ public final class ArmyCommandService {
         }
         Objects.requireNonNull(persistedEcs, "persistedEcs");
         Objects.requireNonNull(persistedControllers, "persistedControllers");
+        Objects.requireNonNull(persistedDimensions, "persistedDimensions");
         Objects.requireNonNull(persistedDirtyMarker, "persistedDirtyMarker");
         server = startingServer;
         ecs = persistedEcs;
         controllers = persistedControllers;
+        dimensions = persistedDimensions;
         dirtyMarker = persistedDirtyMarker;
         ecs.reserveArmies(ArmiesConfig.MAX_ARMIES);
         controllers.reserve(ArmiesConfig.MAX_ARMIES);
@@ -63,6 +73,12 @@ public final class ArmyCommandService {
         }
         requireServerThread();
         factionValidator = Objects.requireNonNull(validator, "validator");
+    }
+
+    public void installArmyOrderValidator(ArmyOrderValidator validator) {
+        Objects.requireNonNull(validator, "validator");
+        if (server != null) requireServerThread();
+        armyOrderValidator = validator;
     }
 
     /** Installs the server-thread execution projection; the persisted ECS remains authoritative. */
@@ -83,6 +99,7 @@ public final class ArmyCommandService {
         ecs = null;
         armyCursor = null;
         controllers = null;
+        dimensions = null;
         dirtyMarker = null;
         factionValidator = ArmyCommandService::defaultFactionId;
         orderCommitListener = ArmyOrderCommitListener.NOOP;
@@ -105,6 +122,14 @@ public final class ArmyCommandService {
      * The unsigned raw 32-bit handle is returned as a non-negative long; failures are negative.
      */
     public long createArmy(ArmyCommandAuthority authority, int factionId, long packedPosition) {
+        return createArmy(authority, factionId, Level.OVERWORLD.location(), packedPosition);
+    }
+
+    public long createArmy(
+            ArmyCommandAuthority authority,
+            int factionId,
+            ResourceLocation targetDimension,
+            long packedPosition) {
         if (server == null) {
             return NOT_RUNNING;
         }
@@ -113,7 +138,7 @@ public final class ArmyCommandService {
         if (!authority.operator()) {
             return PERMISSION_DENIED;
         }
-        return createArmyInternal(authority, factionId, packedPosition);
+        return createArmyInternal(authority, factionId, targetDimension, packedPosition);
     }
 
     /**
@@ -122,6 +147,14 @@ public final class ArmyCommandService {
      */
     public long createControlledArmy(
             ArmyCommandAuthority authority, int factionId, long packedPosition) {
+        return createControlledArmy(authority, factionId, Level.OVERWORLD.location(), packedPosition);
+    }
+
+    public long createControlledArmy(
+            ArmyCommandAuthority authority,
+            int factionId,
+            ResourceLocation targetDimension,
+            long packedPosition) {
         if (server == null) {
             return NOT_RUNNING;
         }
@@ -130,11 +163,15 @@ public final class ArmyCommandService {
         if (!authority.operator() && !authority.hasIdentity()) {
             return PERMISSION_DENIED;
         }
-        return createArmyInternal(authority, factionId, packedPosition);
+        return createArmyInternal(authority, factionId, targetDimension, packedPosition);
     }
 
     private long createArmyInternal(
-            ArmyCommandAuthority authority, int factionId, long packedPosition) {
+            ArmyCommandAuthority authority,
+            int factionId,
+            ResourceLocation targetDimension,
+            long packedPosition) {
+        Objects.requireNonNull(targetDimension, "targetDimension");
         if (!factionValidator.isValid(factionId)) {
             return INVALID_FACTION;
         }
@@ -142,15 +179,45 @@ public final class ArmyCommandService {
             return LIMIT_REACHED;
         }
 
-        int handle = ecs.createArmy(factionId, StrategicArmyOrder.HOLD.code(), 0, packedPosition);
+        int targetDimensionId = dimensions.intern(targetDimension);
+        int handle = ecs.createArmy(
+                factionId, StrategicArmyOrder.HOLD.code(), 0, targetDimensionId, packedPosition);
         controllers.put(
                 handle,
                 authority.uuidMost(),
                 authority.uuidLeast(),
                 authority.hasIdentity());
         dirtyMarker.markDirty();
-        orderCommitListener.committed(handle, StrategicArmyOrder.HOLD.code(), packedPosition);
+        orderCommitListener.committed(
+                handle,
+                StrategicArmyOrder.HOLD.code(),
+                ecs.armyState(handle),
+                targetDimensionId,
+                packedPosition);
         return Integer.toUnsignedLong(handle);
+    }
+
+    /**
+     * Rolls back a just-created controlled army when a compound recruitment command cannot finish.
+     * The caller must first remove every unit it created; populated armies are never removed here.
+     */
+    public boolean rollbackEmptyControlledArmy(ArmyCommandAuthority authority, int armyHandle) {
+        if (server == null) {
+            return false;
+        }
+        requireServerThread();
+        Objects.requireNonNull(authority, "authority");
+        if (!ecs.isArmyAlive(armyHandle)
+                || ecs.armyUnitCount(armyHandle) != 0
+                || !canControl(authority, armyHandle)) {
+            return false;
+        }
+        boolean controllerRemoved = controllers.remove(armyHandle);
+        boolean armyRemoved = ecs.removeArmy(armyHandle);
+        if (controllerRemoved || armyRemoved) {
+            dirtyMarker.markDirty();
+        }
+        return controllerRemoved && armyRemoved;
     }
 
     /** Applies a non-combat strategic intent without performing a path search. */
@@ -158,6 +225,16 @@ public final class ArmyCommandService {
             ArmyCommandAuthority authority,
             int armyHandle,
             StrategicArmyOrder order,
+            long packedTargetPosition) {
+        return issueOrder(
+                authority, armyHandle, order, Level.OVERWORLD.location(), packedTargetPosition);
+    }
+
+    public long issueOrder(
+            ArmyCommandAuthority authority,
+            int armyHandle,
+            StrategicArmyOrder order,
+            ResourceLocation targetDimension,
             long packedTargetPosition) {
         if (server == null) {
             return NOT_RUNNING;
@@ -173,13 +250,24 @@ public final class ArmyCommandService {
         if (order == null) {
             return INVALID_ORDER;
         }
+        Objects.requireNonNull(targetDimension, "targetDimension");
+        if (!armyOrderValidator.isValid(
+                authority, armyHandle, order, targetDimension, packedTargetPosition)) {
+            return INVALID_ORDER;
+        }
 
         boolean changed = ecs.armyOrder(armyHandle) != order.code();
         if (order.requiresTarget()) {
+            int targetDimensionId = dimensions.intern(targetDimension);
+            changed |= ecs.armyTargetDimension(armyHandle) != targetDimensionId;
             changed |= ecs.armyPackedTargetPos(armyHandle) != packedTargetPosition;
+            if (changed) {
+                ecs.armyTargetDimension(armyHandle, targetDimensionId);
+            }
         }
         if (changed) {
             ecs.armyOrder(armyHandle, order.code());
+            ecs.clearArmyTargetVillage(armyHandle);
             if (order.requiresTarget()) {
                 ecs.armyPackedTargetPos(armyHandle, packedTargetPosition);
             }
@@ -187,8 +275,34 @@ public final class ArmyCommandService {
             orderCommitListener.committed(
                     armyHandle,
                     order.code(),
+                    ecs.armyState(armyHandle),
+                    ecs.armyTargetDimension(armyHandle),
                     ecs.armyPackedTargetPos(armyHandle));
         }
+        return SUCCESS;
+    }
+
+    /** Persists one controlled army's formation and forces retained tasks to acknowledge it. */
+    public long setFormation(
+            ArmyCommandAuthority authority, int armyHandle, ArmyFormation formation) {
+        if (server == null) return NOT_RUNNING;
+        requireServerThread();
+        Objects.requireNonNull(authority, "authority");
+        if (!ecs.isArmyAlive(armyHandle)) return ARMY_NOT_FOUND;
+        if (!canControl(authority, armyHandle)) return PERMISSION_DENIED;
+        if (formation == null) return INVALID_FORMATION;
+
+        int current = ecs.armyState(armyHandle);
+        int updated = formation.applyToState(current);
+        if (updated == current) return SUCCESS;
+        ecs.armyState(armyHandle, updated);
+        dirtyMarker.markDirty();
+        orderCommitListener.committed(
+                armyHandle,
+                ecs.armyOrder(armyHandle),
+                updated,
+                ecs.armyTargetDimension(armyHandle),
+                ecs.armyPackedTargetPos(armyHandle));
         return SUCCESS;
     }
 
@@ -256,11 +370,29 @@ public final class ArmyCommandService {
     }
 
     @FunctionalInterface
+    public interface ArmyOrderValidator {
+        ArmyOrderValidator ALLOW_ALL = (authority, armyHandle, order, dimension, target) -> true;
+
+        boolean isValid(
+                ArmyCommandAuthority authority,
+                int armyHandle,
+                StrategicArmyOrder order,
+                ResourceLocation targetDimension,
+                long packedTargetPosition);
+    }
+
+    @FunctionalInterface
     public interface ArmyOrderCommitListener {
-        ArmyOrderCommitListener NOOP = (armyHandle, orderCode, packedTargetPosition) -> {};
+        ArmyOrderCommitListener NOOP =
+                (armyHandle, orderCode, armyState, targetDimensionId, packedTargetPosition) -> {};
 
         /** Called exactly once after a changed order has been committed to the packed ECS. */
-        void committed(int armyHandle, int orderCode, long packedTargetPosition);
+        void committed(
+                int armyHandle,
+                int orderCode,
+                int armyState,
+                int targetDimensionId,
+                long packedTargetPosition);
     }
 
     private static boolean defaultFactionId(int factionId) {

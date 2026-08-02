@@ -15,6 +15,8 @@ public final class PackedArmyOrderRevisions {
     private int size;
     private int[] armyHandles = new int[0];
     private int[] orderCodes = new int[0];
+    private int[] armyStates = new int[0];
+    private int[] targetDimensionIds = new int[0];
     private long[] packedTargets = new long[0];
     private long[] revisions = new long[0];
 
@@ -30,8 +32,25 @@ public final class PackedArmyOrderRevisions {
      * change increments it; an identical observation is a no-op.
      */
     public long observe(int armyHandle, int orderCode, long packedTarget) {
+        return observe(armyHandle, orderCode, 0, 0, packedTarget);
+    }
+
+    public long observe(
+            int armyHandle, int orderCode, int targetDimensionId, long packedTarget) {
+        return observe(armyHandle, orderCode, 0, targetDimensionId, packedTarget);
+    }
+
+    public long observe(
+            int armyHandle,
+            int orderCode,
+            int armyState,
+            int targetDimensionId,
+            long packedTarget) {
         if (armyHandle == 0) {
             throw new IllegalArgumentException("Zero is not a valid army handle");
+        }
+        if (targetDimensionId < 0) {
+            throw new IllegalArgumentException("Negative target dimension: " + targetDimensionId);
         }
         int row = indexOf(armyHandle);
         if (row < 0) {
@@ -39,17 +58,24 @@ public final class PackedArmyOrderRevisions {
             row = size++;
             armyHandles[row] = armyHandle;
             orderCodes[row] = orderCode;
+            armyStates[row] = armyState;
+            targetDimensionIds[row] = targetDimensionId;
             packedTargets[row] = packedTarget;
             revisions[row] = 1L;
             return 1L;
         }
-        if (orderCodes[row] == orderCode && packedTargets[row] == packedTarget) {
+        if (orderCodes[row] == orderCode
+                && armyStates[row] == armyState
+                && targetDimensionIds[row] == targetDimensionId
+                && packedTargets[row] == packedTarget) {
             return revisions[row];
         }
         if (revisions[row] == Long.MAX_VALUE) {
             throw new IllegalStateException("Army order revision space exhausted for " + armyHandle);
         }
         orderCodes[row] = orderCode;
+        armyStates[row] = armyState;
+        targetDimensionIds[row] = targetDimensionId;
         packedTargets[row] = packedTarget;
         return ++revisions[row];
     }
@@ -67,12 +93,28 @@ public final class PackedArmyOrderRevisions {
         return orderCodes[row];
     }
 
+    public int armyState(int armyHandle) {
+        int row = indexOf(armyHandle);
+        if (row < 0) {
+            throw new IllegalArgumentException("Unknown army order projection: " + armyHandle);
+        }
+        return armyStates[row];
+    }
+
     public long packedTarget(int armyHandle) {
         int row = indexOf(armyHandle);
         if (row < 0) {
             throw new IllegalArgumentException("Unknown army order projection: " + armyHandle);
         }
         return packedTargets[row];
+    }
+
+    public int targetDimensionId(int armyHandle) {
+        int row = indexOf(armyHandle);
+        if (row < 0) {
+            throw new IllegalArgumentException("Unknown army order projection: " + armyHandle);
+        }
+        return targetDimensionIds[row];
     }
 
     public int size() {
@@ -82,6 +124,8 @@ public final class PackedArmyOrderRevisions {
     public void clear() {
         Arrays.fill(armyHandles, 0, size, 0);
         Arrays.fill(orderCodes, 0, size, 0);
+        Arrays.fill(armyStates, 0, size, 0);
+        Arrays.fill(targetDimensionIds, 0, size, 0);
         Arrays.fill(packedTargets, 0, size, 0L);
         Arrays.fill(revisions, 0, size, 0L);
         size = 0;
@@ -104,6 +148,8 @@ public final class PackedArmyOrderRevisions {
         int capacity = Math.max(required, current < MIN_GROWTH ? MIN_GROWTH : current + (current >>> 1));
         armyHandles = Arrays.copyOf(armyHandles, capacity);
         orderCodes = Arrays.copyOf(orderCodes, capacity);
+        armyStates = Arrays.copyOf(armyStates, capacity);
+        targetDimensionIds = Arrays.copyOf(targetDimensionIds, capacity);
         packedTargets = Arrays.copyOf(packedTargets, capacity);
         revisions = Arrays.copyOf(revisions, capacity);
     }

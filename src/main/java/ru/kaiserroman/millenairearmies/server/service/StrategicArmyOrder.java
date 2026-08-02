@@ -1,11 +1,13 @@
 package ru.kaiserroman.millenairearmies.server.service;
 
-/** Stable primitive codes stored in the packed ECS. None of these performs combat or pathfinding. */
+/** Stable primitive codes stored in the packed ECS. */
 public enum StrategicArmyOrder {
     HOLD(0, false),
     MOVE(1, true),
     RALLY(2, true),
-    LOGISTICS(3, true);
+    LOGISTICS(3, true),
+    /** Physical entity combat at the selected settlement or field position. */
+    ATTACK(4, true);
 
     private final int code;
     private final boolean requiresTarget;
@@ -29,6 +31,7 @@ public enum StrategicArmyOrder {
             case 1 -> "move";
             case 2 -> "rally";
             case 3 -> "logistics";
+            case 4 -> "attack";
             default -> "unknown(" + code + ')';
         };
     }

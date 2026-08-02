@@ -29,11 +29,14 @@ public final class ArmyUiStateSelfTest {
     }
 
     private static ArmyRosterSnapshotPayload snapshot(long revision, int actionId, int result, int recruits) {
-        int[] recruitInts = new int[recruits];
+        int[] recruitInts = new int[recruits * ArmyRosterSnapshotPayload.RECRUIT_INT_COLUMNS];
         long[] recruitLongs = new long[recruits * ArmyRosterSnapshotPayload.RECRUIT_LONG_COLUMNS];
         String[] recruitStrings = new String[recruits * ArmyRosterSnapshotPayload.RECRUIT_STRING_COLUMNS];
         for (int row = 0; row < recruits; row++) {
-            recruitInts[row] = 10 + row;
+            int ints = row * ArmyRosterSnapshotPayload.RECRUIT_INT_COLUMNS;
+            recruitInts[ints + ArmyRosterSnapshotPayload.RECRUIT_STRENGTH] = 10 + row;
+            recruitInts[ints + ArmyRosterSnapshotPayload.RECRUIT_MODE] =
+                    ArmyRosterSnapshotPayload.RECRUIT_MODE_CONTROLLED;
             recruitLongs[row * 4] = 100 + row;
             recruitLongs[row * 4 + 1] = 200 + row;
             recruitLongs[row * 4 + 2] = 1L;
@@ -49,7 +52,7 @@ public final class ArmyUiStateSelfTest {
                 actionId == 0 ? 0 : 1,
                 1,
                 recruits,
-                new int[] {3, 20, recruits},
+                new int[] {3, 20, recruits, 1},
                 new long[] {1L, 2L, 123L},
                 new String[] {"Caen", "millenaire:norman"},
                 recruitInts,
