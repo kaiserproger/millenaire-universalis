@@ -168,6 +168,7 @@ public final class ArmyLifecycleService {
                     savedData.memberships(),
                     savedData.dimensions(),
                     entityBridge,
+                    factionProjection,
                     commandService,
                     savedData::markArmyChanged);
             recruitmentService.installReleaseListener(orderExecution::releaseUnit);

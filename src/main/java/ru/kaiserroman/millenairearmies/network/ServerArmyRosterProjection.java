@@ -10,6 +10,7 @@ import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionS
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 
 /** Cold command-screen projection; invoked only for an explicit client state request/action. */
@@ -19,6 +20,8 @@ final class ServerArmyRosterProjection {
     private final MillenaireVillageIndex.Cursor cursor;
     private final FactionProjectionService factions;
     private final MillenaireRecruitmentService recruitment;
+    private final RealmGovernanceSavedData.AssignmentView governanceAssignment =
+            new RealmGovernanceSavedData.AssignmentView();
     private long snapshotRevision;
 
     ServerArmyRosterProjection(
@@ -39,12 +42,17 @@ final class ServerArmyRosterProjection {
             byte action,
             int result,
             int affected) {
+        RealmGovernanceSavedData governance = RealmGovernanceSavedData.get(player.server);
+        boolean assigned = governance.readPlayer(player.getUUID(), governanceAssignment);
+        long assignedVillageMost = assigned ? governanceAssignment.villageMost() : 0L;
+        long assignedVillageLeast = assigned ? governanceAssignment.villageLeast() : 0L;
         int settlementCount = 0;
         for (cursor.reset(); cursor.advance()
                 && settlementCount < ArmiesProtocol.MAX_CONTROLLED_SETTLEMENTS; ) {
             Village village = cursor.village();
             if (!eligibleVillage(village)
                     || !village.isControlledBy(player.getUUID())
+                    || !assignedSettlement(village, assigned, assignedVillageMost, assignedVillageLeast)
                     || factionRow(village) < 0) {
                 continue;
             }
@@ -67,6 +75,7 @@ final class ServerArmyRosterProjection {
             int factionRow = factionRow(village);
             if (!eligibleVillage(village)
                     || !village.isControlledBy(player.getUUID())
+                    || !assignedSettlement(village, assigned, assignedVillageMost, assignedVillageLeast)
                     || factionRow < 0) {
                 continue;
             }
@@ -189,6 +198,16 @@ final class ServerArmyRosterProjection {
                 && village.getCenter() != null
                 && village.getCultureId() != null
                 && village.getVillageTypeId() != null;
+    }
+
+    private static boolean assignedSettlement(
+            Village village, boolean assigned, long assignedMost, long assignedLeast) {
+        if (!assigned) {
+            return true;
+        }
+        UUID villageId = village.getId().uuid();
+        return villageId.getMostSignificantBits() == assignedMost
+                && villageId.getLeastSignificantBits() == assignedLeast;
     }
 
     private static String bounded(String value) {

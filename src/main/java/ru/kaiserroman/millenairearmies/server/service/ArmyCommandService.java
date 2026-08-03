@@ -5,6 +5,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.model.ArmyFormation;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 
 /**
@@ -30,6 +32,7 @@ public final class ArmyCommandService {
     private PackedArmyEcs.ArmyCursor armyCursor;
     private PackedArmyControllers controllers;
     private StableDimensionTable dimensions;
+    private RealmGovernanceSavedData governance;
     private DirtyMarker dirtyMarker;
     private FactionValidator factionValidator = ArmyCommandService::defaultFactionId;
     private ArmyOrderCommitListener orderCommitListener = ArmyOrderCommitListener.NOOP;
@@ -56,6 +59,7 @@ public final class ArmyCommandService {
         ecs = persistedEcs;
         controllers = persistedControllers;
         dimensions = persistedDimensions;
+        governance = RealmGovernanceSavedData.get(startingServer);
         dirtyMarker = persistedDirtyMarker;
         ecs.reserveArmies(ArmiesConfig.MAX_ARMIES);
         controllers.reserve(ArmiesConfig.MAX_ARMIES);
@@ -91,6 +95,7 @@ public final class ArmyCommandService {
         armyCursor = null;
         controllers = null;
         dimensions = null;
+        governance = null;
         dirtyMarker = null;
         factionValidator = ArmyCommandService::defaultFactionId;
         orderCommitListener = ArmyOrderCommitListener.NOOP;
@@ -256,8 +261,49 @@ public final class ArmyCommandService {
         return SUCCESS;
     }
 
+    /** Updates the persisted formation and invalidates retained execution of the current order. */
+    public long setFormation(
+            ArmyCommandAuthority authority, int armyHandle, ArmyFormation formation) {
+        if (server == null) {
+            return NOT_RUNNING;
+        }
+        requireServerThread();
+        Objects.requireNonNull(authority, "authority");
+        if (!ecs.isArmyAlive(armyHandle)) {
+            return ARMY_NOT_FOUND;
+        }
+        if (!canControl(authority, armyHandle)) {
+            return PERMISSION_DENIED;
+        }
+        if (formation == null) {
+            return INVALID_ORDER;
+        }
+        int state = ecs.armyState(armyHandle);
+        int updated = formation.applyToState(state);
+        if (updated != state) {
+            ecs.armyState(armyHandle, updated);
+            dirtyMarker.markDirty();
+            orderCommitListener.committed(
+                    armyHandle,
+                    ecs.armyOrder(armyHandle),
+                    ecs.armyTargetDimension(armyHandle),
+                    ecs.armyPackedTargetPos(armyHandle));
+        }
+        return SUCCESS;
+    }
+
     public boolean canControl(ArmyCommandAuthority authority, int armyHandle) {
-        return ArmyCommandAuthorization.canControl(authority, controllers, armyHandle);
+        if (ArmyCommandAuthorization.canControl(authority, controllers, armyHandle)) {
+            return true;
+        }
+        return authority.hasIdentity()
+                && governance != null
+                && controllers.hasController(armyHandle)
+                && governance.canDirectController(
+                        authority.uuidMost(),
+                        authority.uuidLeast(),
+                        controllers.uuidMost(armyHandle),
+                        controllers.uuidLeast(armyHandle));
     }
 
     /** Visits only armies visible to this authority. Intended for command output and UI sync. */

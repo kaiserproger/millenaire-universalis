@@ -19,6 +19,7 @@ public final class ClientStateEvents {
         ClientArmyState.INSTANCE.listener(NetworkArmyClientMirror.INSTANCE);
         ClientFactionMetadataState.INSTANCE.listener(NetworkArmyClientMirror.INSTANCE);
         ClientArmyRosterState.INSTANCE.listener(() -> NetworkArmyClientMirror.INSTANCE.rosterChanged());
+        ClientRealmState.INSTANCE.listener(() -> NetworkArmyClientMirror.INSTANCE.realmChanged());
     }
 
     @SubscribeEvent
@@ -26,8 +27,10 @@ public final class ClientStateEvents {
         ClientArmyState.INSTANCE.reset();
         ClientFactionMetadataState.INSTANCE.reset();
         ClientArmyRosterState.INSTANCE.reset();
+        ClientRealmState.INSTANCE.reset();
         ClientArmyState.INSTANCE.listener(null);
         ClientFactionMetadataState.INSTANCE.listener(null);
         ClientArmyRosterState.INSTANCE.listener(null);
+        ClientRealmState.INSTANCE.listener(null);
     }
 }

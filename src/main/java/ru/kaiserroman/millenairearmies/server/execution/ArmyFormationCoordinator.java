@@ -148,6 +148,14 @@ public final class ArmyFormationCoordinator {
         out.cohesionPercent = armyActiveUnits[armyRow] == 0
                 ? 0
                 : armyReadyUnits[armyRow] * 100 / armyActiveUnits[armyRow];
+        out.formationSlot = slot;
+        out.rightOffset = right;
+        out.forwardOffset = forward;
+        out.anchorX = armyAnchorX[armyRow];
+        out.anchorZ = armyAnchorZ[armyRow];
+        out.forwardX = armyForwardX[armyRow];
+        out.forwardZ = armyForwardZ[armyRow];
+        out.activeUnits = armyActiveUnits[armyRow];
         return out;
     }
 
@@ -419,6 +427,14 @@ public final class ArmyFormationCoordinator {
         private byte phase;
         private boolean canEngage;
         private int cohesionPercent;
+        private int formationSlot;
+        private int activeUnits;
+        private double rightOffset;
+        private double forwardOffset;
+        private double anchorX;
+        private double anchorZ;
+        private double forwardX;
+        private double forwardZ;
 
         public long packedPosition() {
             return packedPosition;
@@ -434,6 +450,38 @@ public final class ArmyFormationCoordinator {
 
         public int cohesionPercent() {
             return cohesionPercent;
+        }
+
+        public int formationSlot() {
+            return formationSlot;
+        }
+
+        public int activeUnits() {
+            return activeUnits;
+        }
+
+        public double rightOffset() {
+            return rightOffset;
+        }
+
+        public double forwardOffset() {
+            return forwardOffset;
+        }
+
+        public double anchorX() {
+            return anchorX;
+        }
+
+        public double anchorZ() {
+            return anchorZ;
+        }
+
+        public double forwardX() {
+            return forwardX;
+        }
+
+        public double forwardZ() {
+            return forwardZ;
         }
     }
 }

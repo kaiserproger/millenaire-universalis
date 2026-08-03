@@ -47,6 +47,67 @@ public final class PlayerRealmSavedDataSelfTest {
                 UUID.randomUUID(), " ", capital,
                 ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"), 0L),
                 "blank realm name");
+
+        UUID feudal = UUID.fromString("10000000-0000-0000-0000-000000000003");
+        UUID governor = UUID.fromString("10000000-0000-0000-0000-000000000004");
+        UUID feudalVillage = UUID.fromString("20000000-0000-0000-0000-000000000003");
+        UUID governorVillage = UUID.fromString("20000000-0000-0000-0000-000000000004");
+        RealmGovernanceSavedData governance = new RealmGovernanceSavedData();
+        check(governance.foundCapital(
+                        owner, capital, RealmGovernanceSavedData.GOVERNMENT_FEUDAL),
+                "capital owner becomes realm head");
+        check(!governance.foundCapital(
+                        owner, feudalVillage, RealmGovernanceSavedData.GOVERNMENT_FEUDAL),
+                "one player cannot control a second settlement");
+        check(governance.attachRegion(owner, feudal, feudalVillage),
+                "feudal government creates feudal region");
+        check(!governance.attachRegion(owner, feudal, governorVillage),
+                "regional player cannot control two settlements");
+        check(governance.attachRegion(
+                        owner, governor, governorVillage, RealmGovernanceSavedData.ROLE_GOVERNOR),
+                "governor region attached");
+        check(!governance.canCommandSettlement(owner, feudalVillage),
+                "realm head cannot bypass a feudal owner");
+        check(governance.canCommandSettlement(feudal, feudalVillage),
+                "feudal owner commands own settlement");
+        check(governance.canCommandSettlement(owner, governorVillage),
+                "realm head may direct a governor region");
+        check(governance.canCommandSettlement(governor, governorVillage),
+                "governor keeps local control");
+        check(governance.canDirectController(
+                        owner.getMostSignificantBits(),
+                        owner.getLeastSignificantBits(),
+                        governor.getMostSignificantBits(),
+                        governor.getLeastSignificantBits()),
+                "realm head receives governor army delegation");
+        check(!governance.canDirectController(
+                        owner.getMostSignificantBits(),
+                        owner.getLeastSignificantBits(),
+                        feudal.getMostSignificantBits(),
+                        feudal.getLeastSignificantBits()),
+                "feudal army remains outside direct capital authority");
+        check(governance.setRegionalRole(
+                        owner, feudalVillage, RealmGovernanceSavedData.ROLE_GOVERNOR),
+                "head may centralize a region");
+        check(governance.canCommandSettlement(owner, feudalVillage),
+                "centralized region accepts capital directives");
+        check(governance.settlementCount(owner) == 3 && governance.regionCount(owner) == 2,
+                "capital and regions counted separately");
+
+        RealmGovernanceSavedData.AssignmentView membership =
+                new RealmGovernanceSavedData.AssignmentView();
+        check(governance.readPlayer(feudal, membership)
+                        && membership.head().equals(owner)
+                        && membership.village().equals(feudalVillage)
+                        && membership.role() == RealmGovernanceSavedData.ROLE_GOVERNOR,
+                "player assignment is explicit and unique");
+        CompoundTag governanceSaved = governance.save(new CompoundTag(), null);
+        RealmGovernanceSavedData governanceRestored =
+                RealmGovernanceSavedData.load(governanceSaved, null);
+        check(governanceRestored.size() == governance.size()
+                        && governanceRestored.revision() == governance.revision()
+                        && governanceRestored.canCommandSettlement(owner, governorVillage),
+                "governance NBT round-trip parity");
         System.out.println("Player realm persistence self-test passed");
     }
 

@@ -17,4 +17,8 @@ public interface ServerIntentSink {
     void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent);
 
     void issueOrder(ServerPlayer player, IssueOrderIntent intent);
+
+    void setFormation(ServerPlayer player, SetFormationIntent intent);
+
+    void realmAction(ServerPlayer player, RealmActionIntent intent);
 }

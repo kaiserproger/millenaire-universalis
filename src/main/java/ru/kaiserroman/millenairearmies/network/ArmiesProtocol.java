@@ -7,7 +7,7 @@ package ru.kaiserroman.millenairearmies.network;
  * opaque 32-bit values: their sign has no meaning and must never be used as validation.
  */
 public final class ArmiesProtocol {
-    public static final String VERSION = "2";
+    public static final String VERSION = "3";
 
     public static final byte SECTION_FACTIONS = 1;
     public static final byte SECTION_ARMIES = 1 << 1;
@@ -72,6 +72,11 @@ public final class ArmiesProtocol {
     public static final byte ACTION_CREATE_ARMY = 1;
     public static final byte ACTION_RECRUIT = 2;
     public static final byte ACTION_ISSUE_ORDER = 3;
+    public static final byte ACTION_SET_FORMATION = 4;
+    /** Client acknowledgement namespace for RealmActionIntent.ACTION_FOUND. */
+    public static final byte ACTION_FOUND_REALM = 5;
+    /** Client acknowledgement namespace for RealmActionIntent.ACTION_SET_TAX. */
+    public static final byte ACTION_SET_REALM_TAX = 6;
 
     public static final int RESULT_NONE = 0;
     public static final int RESULT_ACCEPTED = 1;
@@ -94,6 +99,7 @@ public final class ArmiesProtocol {
     public static final byte ORDER_MOVE = 1;
     public static final byte ORDER_RALLY = 2;
     public static final byte ORDER_LOGISTICS = 3;
+    public static final byte ORDER_ATTACK = 4;
 
     private ArmiesProtocol() {}
 
@@ -119,6 +125,6 @@ public final class ArmiesProtocol {
     }
 
     public static boolean validStrategicOrder(byte order) {
-        return order >= ORDER_HOLD && order <= ORDER_LOGISTICS;
+        return order >= ORDER_HOLD && order <= ORDER_ATTACK;
     }
 }

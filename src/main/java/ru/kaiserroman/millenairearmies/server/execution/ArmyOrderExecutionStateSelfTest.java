@@ -33,23 +33,26 @@ public final class ArmyOrderExecutionStateSelfTest {
         check(orders.observe(army, 1, 0, targetB) == 2L, "target change bumps revision");
         check(orders.observe(army, 2, 0, targetB) == 3L, "order change bumps revision");
         check(orders.observe(army, 2, 1, targetB) == 4L, "dimension change bumps revision");
+        check(orders.observe(army, 2, 1, 1, targetB) == 5L,
+                "formation state change bumps revision");
+        check(orders.armyState(army) == 1, "formation state is projected");
         check(orders.observe(wrappedArmy, 0, 0, 0L) == 1L, "signed raw handle is supported");
         check(orders.size() == 2, "two projected armies");
 
         int unit = 0x0010_0101;
-        check(units.needsApply(unit, army, 4L), "new unit needs current order");
-        units.markRunning(unit, army, 4L);
-        check(!units.needsApply(unit, army, 4L), "running revision is acknowledged");
-        check(!units.markRetry(unit, army, 2L), "stale task cannot rewind newer state");
-        check(!units.needsApply(unit, army, 4L), "stale retry had no effect");
-        check(units.markRetry(unit, army, 4L), "current task may request retry");
-        check(units.needsApply(unit, army, 4L), "retry replays same revision");
-        units.markTerminal(unit, army, 4L);
-        check(!units.needsApply(unit, army, 4L), "terminal revision is stable");
-        check(units.needsApply(unit, army, 5L), "new revision invalidates terminal state");
+        check(units.needsApply(unit, army, 5L), "new unit needs current order");
         units.markRunning(unit, army, 5L);
+        check(!units.needsApply(unit, army, 5L), "running revision is acknowledged");
+        check(!units.markRetry(unit, army, 2L), "stale task cannot rewind newer state");
+        check(!units.needsApply(unit, army, 5L), "stale retry had no effect");
+        check(units.markRetry(unit, army, 5L), "current task may request retry");
+        check(units.needsApply(unit, army, 5L), "retry replays same revision");
+        units.markTerminal(unit, army, 5L);
+        check(!units.needsApply(unit, army, 5L), "terminal revision is stable");
+        check(units.needsApply(unit, army, 6L), "new revision invalidates terminal state");
+        units.markRunning(unit, army, 6L);
         check(units.invalidate(unit), "reload invalidates known unit");
-        check(units.needsApply(unit, army, 5L), "reload replays current revision");
+        check(units.needsApply(unit, army, 6L), "reload replays current revision");
 
         int reassignedArmy = 0x0010_0050;
         check(units.needsApply(unit, reassignedArmy, 1L), "army reassignment invalidates state");

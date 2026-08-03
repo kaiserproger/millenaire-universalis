@@ -13,7 +13,9 @@ import org.millenaire.goal.VillagerTask;
 import org.millenaire.village.Village;
 import org.slf4j.Logger;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
+import ru.kaiserroman.millenairearmies.model.ArmyFormation;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
@@ -27,11 +29,10 @@ import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
  * read-only fast path: it creates no task, context, UUID, iterator, or position object.</p>
  *
  * <p>Millenaire beta.2's public {@code GoalScheduler.forceTask} sets {@code currentGoal} to null,
- * so its generic urgent-goal preemption loop cannot preempt a forced task.  This bridge therefore
- * yields only for concrete public combat signals available without target-finding: an existing
- * attack target or {@link Village#isUnderAttack()}.  It does not periodically tear down routes;
- * Millenaire retains destination, waypoint traversal, stuck recovery and teleport recovery until
- * arrival, abandonment, a combat signal, or a newly committed order.</p>
+ * so its generic urgent-goal preemption loop cannot preempt a forced task. Movement and logistics
+ * therefore yield to concrete combat signals. Strategic attack tasks deliberately keep scheduler
+ * ownership and invoke Millenaire's public navigation and combat API themselves, preserving real
+ * weapons, swings, projectiles, damage and death while adding formation-level tactics.</p>
  */
 public final class ArmyOrderExecutionBridge {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -41,6 +42,9 @@ public final class ArmyOrderExecutionBridge {
     private final PackedArmyOrderRevisions orderRevisions = new PackedArmyOrderRevisions();
     private final PackedUnitExecutionState unitStates = new PackedUnitExecutionState();
     private final StrategicMoveTaskPool taskPool = new StrategicMoveTaskPool();
+    private final StrategicAttackTaskPool attackTaskPool = new StrategicAttackTaskPool();
+    private final ArmyFormationCoordinator formations = new ArmyFormationCoordinator();
+    private final ArmyBattleCoordinator battles = new ArmyBattleCoordinator();
     private final OrderExecutionTelemetry telemetry = new OrderExecutionTelemetry();
 
     private MinecraftServer server;
@@ -48,6 +52,7 @@ public final class ArmyOrderExecutionBridge {
     private PackedUnitMembership memberships;
     private StableDimensionTable dimensions;
     private MillenaireEntityBridge entityBridge;
+    private FactionProjectionService factionProjection;
     private ArmyCommandService commandService;
     private ArmyCommandService.DirtyMarker dirtyMarker;
     private int nextMembershipRow;
@@ -60,6 +65,7 @@ public final class ArmyOrderExecutionBridge {
             PackedUnitMembership persistedMemberships,
             StableDimensionTable persistedDimensions,
             MillenaireEntityBridge loadedEntities,
+            FactionProjectionService projectedFactions,
             ArmyCommandService runningCommandService,
             ArmyCommandService.DirtyMarker persistedDirtyMarker) {
         Objects.requireNonNull(startingServer, "startingServer");
@@ -81,6 +87,7 @@ public final class ArmyOrderExecutionBridge {
         memberships = Objects.requireNonNull(persistedMemberships, "persistedMemberships");
         dimensions = Objects.requireNonNull(persistedDimensions, "persistedDimensions");
         entityBridge = Objects.requireNonNull(loadedEntities, "loadedEntities");
+        factionProjection = Objects.requireNonNull(projectedFactions, "projectedFactions");
         commandService = Objects.requireNonNull(runningCommandService, "runningCommandService");
         dirtyMarker = Objects.requireNonNull(persistedDirtyMarker, "persistedDirtyMarker");
         orderRevisions.reserve(ecs.armySize());
@@ -92,6 +99,7 @@ public final class ArmyOrderExecutionBridge {
                     cursor.handle(),
                     cursor.order(),
                     cursor.targetDimension(),
+                    cursor.state(),
                     cursor.packedTargetPos());
         }
         commandService.installOrderCommitListener(this::orderCommitted);
@@ -110,7 +118,9 @@ public final class ArmyOrderExecutionBridge {
         if (!tickingServer.isSameThread()) {
             throw new IllegalStateException("Army execution tick escaped the Minecraft server thread");
         }
-        maybeLogTelemetry(tickingServer.overworld().getGameTime());
+        long gameTime = tickingServer.overworld().getGameTime();
+        maybeLogTelemetry(gameTime);
+        formations.tick(gameTime);
         int membershipCount = memberships.size();
         if (membershipCount == 0) {
             nextMembershipRow = 0;
@@ -161,6 +171,13 @@ public final class ArmyOrderExecutionBridge {
 
     public void entityLeft(MillVillager villager) {
         entityJoined(villager);
+        int unitHandle = memberships.unitHandleForUuid(
+                villager.getUUID().getMostSignificantBits(),
+                villager.getUUID().getLeastSignificantBits());
+        if (unitHandle != 0) {
+            formations.removeUnit(unitHandle);
+            battles.removeUnit(unitHandle);
+        }
     }
 
     /** Immediately relinquishes only a task owned by this bridge before persistent release. */
@@ -181,7 +198,7 @@ public final class ArmyOrderExecutionBridge {
                 return;
             }
             VillagerTask current = scheduler.getCurrentTask();
-            if (!(current instanceof StrategicMoveTask task) || task.unitHandle() != unitHandle) {
+            if (!(current instanceof StrategicRetainedTask task) || task.unitHandle() != unitHandle) {
                 return;
             }
             task.cancel();
@@ -195,6 +212,8 @@ public final class ArmyOrderExecutionBridge {
                     Integer.toUnsignedString(unitHandle),
                     failure);
         } finally {
+            formations.removeUnit(unitHandle);
+            battles.removeUnit(unitHandle);
             unitStates.remove(unitHandle);
         }
     }
@@ -210,6 +229,7 @@ public final class ArmyOrderExecutionBridge {
         memberships = null;
         dimensions = null;
         entityBridge = null;
+        factionProjection = null;
         commandService = null;
         dirtyMarker = null;
         nextMembershipRow = 0;
@@ -218,6 +238,9 @@ public final class ArmyOrderExecutionBridge {
         orderRevisions.clear();
         unitStates.clear();
         taskPool.clear();
+        attackTaskPool.clear();
+        formations.clear();
+        battles.clear();
         return true;
     }
 
@@ -289,6 +312,7 @@ public final class ArmyOrderExecutionBridge {
                     armyHandle,
                     ecs.armyOrder(armyHandle),
                     ecs.armyTargetDimension(armyHandle),
+                    ecs.armyState(armyHandle),
                     ecs.armyPackedTargetPos(armyHandle));
         }
         if (!unitStates.needsApply(unitHandle, armyHandle, revision)) {
@@ -310,7 +334,7 @@ public final class ArmyOrderExecutionBridge {
 
         int orderCode = orderRevisions.orderCode(armyHandle);
         VillagerTask currentTask = scheduler.getCurrentTask();
-        if (currentTask instanceof StrategicMoveTask existing
+        if (currentTask instanceof StrategicRetainedTask existing
                 && existing.unitHandle() == unitHandle) {
             if (existing.armyHandle() == armyHandle && existing.revision() == revision) {
                 // A combat-yielded task remains installed until the next entity tick. Let the
@@ -333,7 +357,7 @@ public final class ArmyOrderExecutionBridge {
             return UnitOrderProjection.update(ecs, unitHandle, orderCode);
         }
         if (orderCode < StrategicArmyOrder.MOVE.code()
-                || orderCode > StrategicArmyOrder.LOGISTICS.code()) {
+                || orderCode > StrategicArmyOrder.ATTACK.code()) {
             unitStates.markBlocked(unitHandle, armyHandle, revision);
             return false;
         }
@@ -357,14 +381,18 @@ public final class ArmyOrderExecutionBridge {
 
         VillagerGoal currentGoal = scheduler.getCurrentGoal();
         Village boundVillage = entityBridge.villageFor(villager);
+        boolean strategicAttack = orderCode == StrategicArmyOrder.ATTACK.code();
         if (villager.isVillagerSleeping()
                 || villager.isBaby()
                 || villager.isHired()
                 || villager.isRaiderEntity()
-                || villager.getAttackTarget() != null
                 || boundVillage == null
-                || boundVillage.isUnderAttack()
-                || currentGoal != null && currentGoal.isCombatUrgent()) {
+                || strategicAttack
+                        && villager.getAttackTarget() != null
+                        && !(villager.getAttackTarget() instanceof MillVillager)
+                || !strategicAttack && villager.getAttackTarget() != null
+                || !strategicAttack && boundVillage.isUnderAttack()
+                || !strategicAttack && currentGoal != null && currentGoal.isCombatUrgent()) {
             return false;
         }
         GoalContext context = villager.buildGoalContext();
@@ -378,13 +406,31 @@ public final class ArmyOrderExecutionBridge {
             return false;
         }
 
-        StrategicMoveTask task = taskPool.acquire(
-                unitStates,
-                telemetry,
-                unitHandle,
-                armyHandle,
-                revision,
-                packedTarget);
+        VillagerTask task;
+        if (orderCode == StrategicArmyOrder.ATTACK.code()) {
+            task = attackTaskPool.acquire(
+                    unitStates,
+                    telemetry,
+                    formations,
+                    battles,
+                    entityBridge,
+                    factionProjection,
+                    unitHandle,
+                    armyHandle,
+                    revision,
+                    packedTarget,
+                    ArmyFormation.fromState(orderRevisions.armyState(armyHandle)).code(),
+                    ecs.armyUnitCount(armyHandle),
+                    ecs.armyFaction(armyHandle));
+        } else {
+            task = taskPool.acquire(
+                    unitStates,
+                    telemetry,
+                    unitHandle,
+                    armyHandle,
+                    revision,
+                    packedTarget);
+        }
         try {
             scheduler.forceTask(task, context);
             unitStates.markRunning(unitHandle, armyHandle, revision);
@@ -409,7 +455,11 @@ public final class ArmyOrderExecutionBridge {
             int targetDimensionId,
             long packedTargetPosition) {
         orderRevisions.observe(
-                armyHandle, orderCode, targetDimensionId, packedTargetPosition);
+                armyHandle,
+                orderCode,
+                targetDimensionId,
+                ecs.armyState(armyHandle),
+                packedTargetPosition);
         telemetry.accepted();
     }
 
@@ -429,6 +479,7 @@ public final class ArmyOrderExecutionBridge {
                                     armyHandle,
                                     ecs.armyOrder(armyHandle),
                                     ecs.armyTargetDimension(armyHandle),
+                                    ecs.armyState(armyHandle),
                                     ecs.armyPackedTargetPos(armyHandle));
                         }
                         if (revision > 0L) {

@@ -109,6 +109,12 @@ public final class PackedFactionState {
         return removed;
     }
 
+    /** Allocation-free directed allegiance lookup for combat and diplomacy gates. */
+    public byte allegianceCode(int sourceFactionId, int targetFactionId) {
+        int row = findRow(sourceFactionId, targetFactionId);
+        return row < 0 ? FactionAllegiance.NEUTRAL.code() : allegianceCodes[row];
+    }
+
     public Cursor newCursor() {
         return new Cursor(this);
     }

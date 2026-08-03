@@ -279,11 +279,24 @@ public final class FactionProjectionService
     @Override
     public int factionForVillage(long villageUuidMost, long villageUuidLeast) {
         Village village = villageIndex.find(villageUuidMost, villageUuidLeast);
+        return factionForVillage(village);
+    }
+
+    public int factionForVillage(Village village) {
         if (village == null || village.getCultureId() == null) {
             return -1;
         }
         int row = findCultureRow(village.getCultureId());
         return row < 0 ? -1 : factionIds[row];
+    }
+
+    public boolean isHostile(int sourceFactionId, int targetFactionId) {
+        return sourceFactionId >= 0
+                && targetFactionId >= 0
+                && sourceFactionId != targetFactionId
+                && relations != null
+                && relations.allegianceCode(sourceFactionId, targetFactionId)
+                        == FactionAllegiance.HOSTILE.code();
     }
 
     private int collectCultures(MillenaireVillageIndex villageIndex) {

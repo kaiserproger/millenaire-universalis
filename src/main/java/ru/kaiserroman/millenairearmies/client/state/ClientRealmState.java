@@ -34,6 +34,25 @@ public final class ClientRealmState {
 
     private static RealmStatePayload empty() {
         return new RealmStatePayload(
-                0L, 0, (byte) 0, 0, false, "", "", 0, 0L, 0, 0, 0, 0, 0, 0, 0);
+                0L,
+                0,
+                (byte) 0,
+                0,
+                false,
+                (byte) 0,
+                (byte) 0,
+                "",
+                "",
+                "",
+                0,
+                0L,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0);
     }
 }

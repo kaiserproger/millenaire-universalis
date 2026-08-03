@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 enum StrategicTab {
     OVERVIEW("gui.millenaire_armies.tab.overview"),
     RECRUITMENT("gui.millenaire_armies.tab.recruitment"),
+    REALM("gui.millenaire_armies.tab.realm"),
     FACTIONS("gui.millenaire_armies.tab.factions"),
     ARMIES("gui.millenaire_armies.tab.armies"),
     ORDERS("gui.millenaire_armies.tab.orders"),

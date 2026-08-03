@@ -15,6 +15,7 @@ import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 import ru.kaiserroman.millenairearmies.persistence.PackedCommandState;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
@@ -69,6 +70,9 @@ public final class MillenaireRecruitmentService {
     private MinecraftServer server;
     private PackedArmyEcs ecs;
     private PackedUnitMembership memberships;
+    private RealmGovernanceSavedData governance;
+    private final RealmGovernanceSavedData.AssignmentView governanceAssignment =
+            new RealmGovernanceSavedData.AssignmentView();
     private RecruitmentRoster roster;
     private RecruitmentFactionPolicy factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
     private RecruitmentSupplyPolicy supplyPolicy = RecruitmentSupplyPolicy.ALLOW_ALL;
@@ -119,6 +123,7 @@ public final class MillenaireRecruitmentService {
         server = startingServer;
         ecs = persistedEcs;
         memberships = persistedMemberships;
+        governance = RealmGovernanceSavedData.get(startingServer);
         roster = new RecruitmentRoster(
                 persistedEcs,
                 persistedMemberships,
@@ -138,6 +143,7 @@ public final class MillenaireRecruitmentService {
         server = null;
         ecs = null;
         memberships = null;
+        governance = null;
         roster = null;
         factionPolicy = RecruitmentFactionPolicy.DENY_ALL;
         clearCandidates();
@@ -541,10 +547,21 @@ public final class MillenaireRecruitmentService {
             return VILLAGE_NOT_FOUND;
         }
         UUID playerId = new UUID(authority.uuidMost(), authority.uuidLeast());
-        return RecruitmentRules.settlementAccess(
+        long access = RecruitmentRules.settlementAccess(
                 village.isPlayerControlled(),
                 village.isControlledBy(playerId),
                 village.getCombinedReputation(level, playerId));
+        if (access != 0L) {
+            return access;
+        }
+        UUID villageId = village.getId().uuid();
+        if (governance != null
+                && governance.readPlayer(playerId, governanceAssignment)
+                && (governanceAssignment.villageMost() != villageId.getMostSignificantBits()
+                        || governanceAssignment.villageLeast() != villageId.getLeastSignificantBits())) {
+            return SETTLEMENT_NOT_CONTROLLED;
+        }
+        return 0L;
     }
 
     private boolean armyMatchesVillage(int armyHandle, Village village) {

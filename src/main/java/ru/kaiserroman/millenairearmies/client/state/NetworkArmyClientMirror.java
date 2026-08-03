@@ -17,6 +17,9 @@ import ru.kaiserroman.millenairearmies.network.FactionMetadataPayload;
 import ru.kaiserroman.millenairearmies.network.IssueOrderIntent;
 import ru.kaiserroman.millenairearmies.network.RequestStateIntent;
 import ru.kaiserroman.millenairearmies.network.RecruitUnitsIntent;
+import ru.kaiserroman.millenairearmies.network.RealmActionIntent;
+import ru.kaiserroman.millenairearmies.network.SetFormationIntent;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.presentation.client.ClientPresentationState;
 import ru.kaiserroman.millenairearmies.presentation.client.ClientUnitPresentation;
 
@@ -31,13 +34,14 @@ public final class NetworkArmyClientMirror
     private static final ResourceLocation PRESENTATION_RANK_NONE = id("none");
     private static final ResourceLocation PRESENTATION_BANNER_DEFAULT = id("default");
     private static final ResourceLocation[] PRESENTATION_ORDER = {
-        id("holding"), id("moving"), id("rallying"), id("supplying")
+        id("holding"), id("moving"), id("rallying"), id("supplying"), id("attacking")
     };
     public static final NetworkArmyClientMirror INSTANCE = new NetworkArmyClientMirror();
 
     private final ClientArmyState state = ClientArmyState.INSTANCE;
     private final ClientFactionMetadataState metadata = ClientFactionMetadataState.INSTANCE;
     private final ClientArmyRosterState roster = ClientArmyRosterState.INSTANCE;
+    private final ClientRealmState realm = ClientRealmState.INSTANCE;
     private final ClientUnitPresentation[] unitPresentations =
             new ClientUnitPresentation[PRESENTATION_ORDER.length];
     private String[] factionNames = new String[0];
@@ -85,6 +89,11 @@ public final class NetworkArmyClientMirror
     public void rosterChanged() {
         viewVersion++;
         rebuildPresentation();
+        ArmyClientState.install(this);
+    }
+
+    public void realmChanged() {
+        viewVersion++;
         ArmyClientState.install(this);
     }
 
@@ -263,6 +272,11 @@ public final class NetworkArmyClientMirror
     }
 
     @Override
+    public int armyFormationCode(int index) {
+        return armies().intValue(index, ArmiesProtocol.COLUMN_PRIMARY_KEY) & 0x7;
+    }
+
+    @Override
     public String armyOrderTarget(int index) {
         return armyLocations[index];
     }
@@ -423,10 +437,50 @@ public final class NetworkArmyClientMirror
     @Override public String recruitRole(int index) {
         return roster.recruitString(index, ArmyRosterSnapshotPayload.RECRUIT_ROLE);
     }
-    @Override public int acknowledgedActionId() { return roster.acknowledgementActionId(); }
-    @Override public byte acknowledgedAction() { return roster.acknowledgementAction(); }
-    @Override public int acknowledgedResult() { return roster.acknowledgementResult(); }
-    @Override public int acknowledgedAffected() { return roster.acknowledgementAffected(); }
+
+    @Override public boolean realmFounded() { return realm.payload().founded(); }
+    @Override public long realmRevision() { return realm.payload().realmRevision(); }
+    @Override public byte realmRoleCode() { return realm.payload().role(); }
+    @Override public byte realmGovernmentCode() { return realm.payload().government(); }
+    @Override public String realmName() { return realm.payload().name(); }
+    @Override public String realmCapitalName() { return realm.payload().capitalName(); }
+    @Override public String realmControlledSettlementName() {
+        return realm.payload().controlledSettlementName();
+    }
+    @Override public int realmTaxRate() { return realm.payload().taxRate(); }
+    @Override public long realmTreasury() { return realm.payload().treasury(); }
+    @Override public int realmSettlementCount() { return realm.payload().settlementCount(); }
+    @Override public int realmRegionCount() { return realm.payload().regionCount(); }
+    @Override public int realmPopulation() { return realm.payload().population(); }
+    @Override public int realmCapturedSettlementCount() {
+        return realm.payload().capturedSettlements();
+    }
+    @Override public int realmFood() { return realm.payload().food(); }
+    @Override public int realmIron() { return realm.payload().iron(); }
+    @Override public int realmLeather() { return realm.payload().leather(); }
+    @Override public int realmArrows() { return realm.payload().arrows(); }
+
+    @Override public int acknowledgedActionId() {
+        return realmAcknowledgementIsNewer()
+                ? realm.payload().acknowledgementActionId()
+                : roster.acknowledgementActionId();
+    }
+    @Override public byte acknowledgedAction() {
+        if (!realmAcknowledgementIsNewer()) {
+            return roster.acknowledgementAction();
+        }
+        return realm.payload().acknowledgementAction() == RealmActionIntent.ACTION_FOUND
+                ? ArmiesProtocol.ACTION_FOUND_REALM
+                : ArmiesProtocol.ACTION_SET_REALM_TAX;
+    }
+    @Override public int acknowledgedResult() {
+        return realmAcknowledgementIsNewer()
+                ? realm.payload().acknowledgementResult()
+                : roster.acknowledgementResult();
+    }
+    @Override public int acknowledgedAffected() {
+        return realmAcknowledgementIsNewer() ? 0 : roster.acknowledgementAffected();
+    }
 
     @Override
     public boolean requestCreateArmy(long villageUuidMost, long villageUuidLeast) {
@@ -486,6 +540,66 @@ public final class NetworkArmyClientMirror
                 actionId, armyHandleBits, (byte) orderTypeCode,
                 minecraft.level.dimension().location(), target, 0L, -1,
                 state.revision(), (byte) 0));
+        return true;
+    }
+
+    @Override
+    public boolean requestSetFormation(int armyHandleBits, int formationCode) {
+        if (!isReady() || formationCode < 0 || formationCode > 4
+                || armies().findRow(armyHandleBits) < 0
+                || Minecraft.getInstance().getConnection() == null) {
+            return false;
+        }
+        PacketDistributor.sendToServer(new SetFormationIntent(
+                nextActionId(), armyHandleBits, (byte) formationCode, state.revision()));
+        return true;
+    }
+
+    @Override
+    public boolean requestFoundRealm(long villageUuidMost, long villageUuidLeast) {
+        if (!isReady() || realmFounded() || Minecraft.getInstance().getConnection() == null) {
+            return false;
+        }
+        boolean controlled = false;
+        for (int row = 0; row < roster.settlementCount(); row++) {
+            if (settlementUuidMost(row) == villageUuidMost
+                    && settlementUuidLeast(row) == villageUuidLeast) {
+                controlled = true;
+                break;
+            }
+        }
+        if (!controlled) {
+            return false;
+        }
+        PacketDistributor.sendToServer(new RealmActionIntent(
+                nextActionId(),
+                RealmActionIntent.ACTION_FOUND,
+                villageUuidMost,
+                villageUuidLeast,
+                0,
+                state.revision(),
+                realmRevision()));
+        return true;
+    }
+
+    @Override
+    public boolean requestSetRealmTax(int taxRate) {
+        if (!isReady()
+                || !realmFounded()
+                || realmRoleCode() != RealmGovernanceSavedData.ROLE_HEAD
+                || taxRate < 0
+                || taxRate > 25
+                || Minecraft.getInstance().getConnection() == null) {
+            return false;
+        }
+        PacketDistributor.sendToServer(new RealmActionIntent(
+                nextActionId(),
+                RealmActionIntent.ACTION_SET_TAX,
+                0L,
+                0L,
+                taxRate,
+                state.revision(),
+                realmRevision()));
         return true;
     }
 
@@ -635,6 +749,11 @@ public final class NetworkArmyClientMirror
         return actionSequence;
     }
 
+    private boolean realmAcknowledgementIsNewer() {
+        int realmActionId = realm.payload().acknowledgementActionId();
+        return realmActionId != 0 && realmActionId >= roster.acknowledgementActionId();
+    }
+
     private PackedMirrorTable factions() {
         return state.table(ArmiesProtocol.KIND_FACTION);
     }
@@ -671,6 +790,7 @@ public final class NetworkArmyClientMirror
             case ArmiesProtocol.ORDER_MOVE -> "gui.millenaire_armies.order.move";
             case ArmiesProtocol.ORDER_RALLY -> "gui.millenaire_armies.order.rally";
             case ArmiesProtocol.ORDER_LOGISTICS -> "gui.millenaire_armies.order.logistics";
+            case ArmiesProtocol.ORDER_ATTACK -> "gui.millenaire_armies.order.attack";
             default -> "gui.millenaire_armies.order.unknown";
         };
     }

@@ -5,6 +5,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 
 /** Bounded server projection of one authenticated player's founded realm and economy. */
 public record RealmStatePayload(
@@ -13,11 +14,15 @@ public record RealmStatePayload(
         byte acknowledgementAction,
         int acknowledgementResult,
         boolean founded,
+        byte role,
+        byte government,
         String name,
         String capitalName,
+        String controlledSettlementName,
         int taxRate,
         long treasury,
         int settlementCount,
+        int regionCount,
         int population,
         int capturedSettlements,
         int food,
@@ -36,15 +41,31 @@ public record RealmStatePayload(
                 || acknowledgementAction < 0 || acknowledgementAction > RealmActionIntent.ACTION_SET_TAX
                 || acknowledgementResult < ArmiesProtocol.RESULT_NONE
                 || acknowledgementResult > ArmiesProtocol.RESULT_PARTIAL
+                || role < RealmGovernanceSavedData.ROLE_NONE
+                || role > RealmGovernanceSavedData.ROLE_GOVERNOR
+                || government < 0 || government > RealmGovernanceSavedData.GOVERNMENT_ADMINISTRATIVE
                 || taxRate < 0 || taxRate > 25 || treasury < 0L
-                || settlementCount < 0 || population < 0 || capturedSettlements < 0
+                || settlementCount < 0 || regionCount < 0 || regionCount > settlementCount
+                || population < 0 || capturedSettlements < 0
                 || food < 0 || iron < 0 || leather < 0 || arrows < 0) {
             throw new IllegalArgumentException("Realm snapshot is outside protocol bounds");
         }
         BoundedCodecs.utf8Length(name, MAX_STRING_UTF8_BYTES, "realm name");
         BoundedCodecs.utf8Length(capitalName, MAX_STRING_UTF8_BYTES, "capital name");
-        if (!founded && (!name.isEmpty() || !capitalName.isEmpty() || realmRevision != 0L)) {
+        BoundedCodecs.utf8Length(
+                controlledSettlementName, MAX_STRING_UTF8_BYTES, "controlled settlement name");
+        if (!founded && (!name.isEmpty()
+                || !capitalName.isEmpty()
+                || !controlledSettlementName.isEmpty()
+                || role != RealmGovernanceSavedData.ROLE_NONE
+                || government != 0
+                || settlementCount != 0
+                || regionCount != 0
+                || realmRevision != 0L)) {
             throw new IllegalArgumentException("Unfounded realm snapshot contains founded state");
+        }
+        if (founded && (role == RealmGovernanceSavedData.ROLE_NONE || government == 0)) {
+            throw new IllegalArgumentException("Founded realm snapshot lacks political role");
         }
     }
 
@@ -54,11 +75,19 @@ public record RealmStatePayload(
         buffer.writeByte(payload.acknowledgementAction);
         BoundedCodecs.writeCount(buffer, payload.acknowledgementResult, ArmiesProtocol.RESULT_PARTIAL, "result");
         buffer.writeBoolean(payload.founded);
+        buffer.writeByte(payload.role);
+        buffer.writeByte(payload.government);
         BoundedCodecs.writeUtf8(buffer, payload.name, MAX_STRING_UTF8_BYTES, "realm name");
         BoundedCodecs.writeUtf8(buffer, payload.capitalName, MAX_STRING_UTF8_BYTES, "capital name");
+        BoundedCodecs.writeUtf8(
+                buffer,
+                payload.controlledSettlementName,
+                MAX_STRING_UTF8_BYTES,
+                "controlled settlement name");
         BoundedCodecs.writeCount(buffer, payload.taxRate, 25, "taxRate");
         buffer.writeVarLong(payload.treasury);
         BoundedCodecs.writeCount(buffer, payload.settlementCount, Integer.MAX_VALUE, "settlements");
+        BoundedCodecs.writeCount(buffer, payload.regionCount, Integer.MAX_VALUE, "regions");
         BoundedCodecs.writeCount(buffer, payload.population, Integer.MAX_VALUE, "population");
         BoundedCodecs.writeCount(buffer, payload.capturedSettlements, Integer.MAX_VALUE, "captures");
         BoundedCodecs.writeCount(buffer, payload.food, Integer.MAX_VALUE, "food");
@@ -74,11 +103,15 @@ public record RealmStatePayload(
                 buffer.readByte(),
                 BoundedCodecs.readCount(buffer, ArmiesProtocol.RESULT_PARTIAL, "result"),
                 buffer.readBoolean(),
+                buffer.readByte(),
+                buffer.readByte(),
                 BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "realm name"),
                 BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "capital name"),
+                BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "controlled settlement name"),
                 BoundedCodecs.readCount(buffer, 25, "taxRate"),
                 buffer.readVarLong(),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "settlements"),
+                BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "regions"),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "population"),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "captures"),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "food"),

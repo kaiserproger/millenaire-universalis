@@ -1,15 +1,22 @@
 package ru.kaiserroman.millenairearmies.network;
 
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
+import org.millenaire.ReputationConstants;
+import org.millenaire.village.Village;
+import org.millenaire.village.VillagerRecord;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
+import ru.kaiserroman.millenairearmies.model.ArmyFormation;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedFactionState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
+import ru.kaiserroman.millenairearmies.persistence.PlayerRealmSavedData;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
 import ru.kaiserroman.millenairearmies.server.service.StrategicArmyOrder;
@@ -32,9 +39,13 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
     private final int[] visibleFactions = new int[ArmiesProtocol.MAX_FACTIONS_PER_SNAPSHOT];
     private FactionProjectionService factionProjection;
     private final MillenaireRecruitmentService recruitment;
+    private final MillenaireVillageIndex villageIndex;
     private final ServerArmyRosterProjection rosterProjection;
     private final ArmyOrderExecutionBridge execution;
     private final SettlementEconomyEngine settlementEconomy;
+    private final PlayerRealmSavedData.View realmView = new PlayerRealmSavedData.View();
+    private final RealmGovernanceSavedData.AssignmentView realmAssignment =
+            new RealmGovernanceSavedData.AssignmentView();
     private int visibleFactionCount;
 
     public ServerArmyNetworkService(
@@ -49,6 +60,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
         this.commands = commands;
         this.factionProjection = factionProjection;
         this.recruitment = recruitment;
+        this.villageIndex = villageIndex;
         this.rosterProjection = new ServerArmyRosterProjection(
                 data, villageIndex, factionProjection, recruitment);
         this.execution = execution;
@@ -85,6 +97,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
                         ? ArmiesProtocol.SCOPE_FACTION
                         : ArmiesProtocol.SCOPE_GLOBAL;
         sendSnapshot(player, sections, scope, intent.contextHandle());
+        sendRealm(player, 0, (byte) 0, ArmiesProtocol.RESULT_NONE);
     }
 
     @Override
@@ -95,6 +108,7 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             return;
         }
         sendSnapshot(player, intent.sectionMask(), intent.scope(), intent.scopeHandle());
+        sendRealm(player, 0, (byte) 0, ArmiesProtocol.RESULT_NONE);
     }
 
     @Override
@@ -195,6 +209,88 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
         }
         sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_ISSUE_ORDER,
                 commandResult(result), result == ArmyCommandService.SUCCESS ? 1 : 0);
+    }
+
+    @Override
+    public void setFormation(ServerPlayer player, SetFormationIntent intent) {
+        if (intent.expectedRevision() != data.armyRevision()) {
+            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_SET_FORMATION,
+                    ArmiesProtocol.RESULT_STALE, 0);
+            return;
+        }
+        ArmyFormation formation;
+        try {
+            formation = ArmyFormation.fromCode(Byte.toUnsignedInt(intent.formationCode()));
+        } catch (IllegalArgumentException invalid) {
+            sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_SET_FORMATION,
+                    ArmiesProtocol.RESULT_INVALID, 0);
+            return;
+        }
+        long result = commands.setFormation(authority(player), intent.armyHandle(), formation);
+        if (result == ArmyCommandService.SUCCESS) {
+            sendSnapshot(player, ArmiesProtocol.SECTION_ALL, ArmiesProtocol.SCOPE_GLOBAL, 0);
+        }
+        sendRoster(player, intent.actionId(), ArmiesProtocol.ACTION_SET_FORMATION,
+                commandResult(result), result == ArmyCommandService.SUCCESS ? 1 : 0);
+    }
+
+    @Override
+    public void realmAction(ServerPlayer player, RealmActionIntent intent) {
+        PlayerRealmSavedData realms = PlayerRealmSavedData.get(player.server);
+        RealmGovernanceSavedData governance = RealmGovernanceSavedData.get(player.server);
+        ensureLegacyGovernance(player.getUUID(), realms, governance);
+        long currentRevision = realmRevision(player.getUUID(), realms, governance);
+        if (intent.expectedRealmRevision() != currentRevision
+                || intent.action() == RealmActionIntent.ACTION_FOUND
+                        && intent.expectedArmyRevision() != data.armyRevision()) {
+            sendRealm(player, intent.actionId(), intent.action(), ArmiesProtocol.RESULT_STALE);
+            return;
+        }
+
+        int result;
+        if (intent.action() == RealmActionIntent.ACTION_FOUND) {
+            UUID capitalId = new UUID(intent.capitalVillageMost(), intent.capitalVillageLeast());
+            Village capital = villageIndex.find(
+                    intent.capitalVillageMost(), intent.capitalVillageLeast());
+            boolean eligible = capital != null
+                    && capital.getId() != null
+                    && capital.getId().uuid() != null
+                    && villageIndex.level(capital.getId()) == player.serverLevel()
+                    && player.blockPosition().distSqr(capital.getCenter()) <= 64L * 64L
+                    && capital.isControlledBy(player.getUUID())
+                    && capital.getCombinedReputation(player.serverLevel(), player.getUUID())
+                            >= ReputationConstants.ONE_OF_US
+                    && !realms.exists(player.getUUID())
+                    && governance.canFoundCapital(player.getUUID(), capitalId);
+            if (!eligible) {
+                result = ArmiesProtocol.RESULT_PERMISSION_DENIED;
+            } else {
+                String capitalName = villageName(capital);
+                boolean founded = realms.found(
+                        player.getUUID(),
+                        capitalName,
+                        capitalId,
+                        player.serverLevel().dimension().location(),
+                        player.serverLevel().getGameTime());
+                if (!founded || !governance.foundCapital(
+                        player.getUUID(),
+                        capitalId,
+                        RealmGovernanceSavedData.GOVERNMENT_FEUDAL)) {
+                    throw new IllegalStateException("Realm foundation preflight/commit mismatch");
+                }
+                result = ArmiesProtocol.RESULT_ACCEPTED;
+            }
+        } else if (intent.action() == RealmActionIntent.ACTION_SET_TAX) {
+            boolean member = governance.readPlayer(player.getUUID(), realmAssignment);
+            boolean head = member && realmAssignment.role() == RealmGovernanceSavedData.ROLE_HEAD;
+            result = head && realms.setTaxRate(realmAssignment.head(), intent.taxRate())
+                    ? ArmiesProtocol.RESULT_ACCEPTED
+                    : ArmiesProtocol.RESULT_PERMISSION_DENIED;
+        } else {
+            result = ArmiesProtocol.RESULT_INVALID;
+        }
+        sendRealm(player, intent.actionId(), intent.action(), result);
     }
 
     private void sendSnapshot(ServerPlayer player, byte sections, byte scope, int scopeHandle) {
@@ -486,8 +582,145 @@ public final class ServerArmyNetworkService implements ServerIntentSink {
             case ArmiesProtocol.ORDER_MOVE -> StrategicArmyOrder.MOVE;
             case ArmiesProtocol.ORDER_RALLY -> StrategicArmyOrder.RALLY;
             case ArmiesProtocol.ORDER_LOGISTICS -> StrategicArmyOrder.LOGISTICS;
+            case ArmiesProtocol.ORDER_ATTACK -> StrategicArmyOrder.ATTACK;
             default -> null;
         };
+    }
+
+    private void sendRealm(ServerPlayer player, int actionId, byte action, int result) {
+        PlayerRealmSavedData realms = PlayerRealmSavedData.get(player.server);
+        RealmGovernanceSavedData governance = RealmGovernanceSavedData.get(player.server);
+        ensureLegacyGovernance(player.getUUID(), realms, governance);
+        if (!governance.readPlayer(player.getUUID(), realmAssignment)
+                || !realms.read(realmAssignment.head(), realmView)) {
+            ArmiesNetwork.sendRealm(player, new RealmStatePayload(
+                    0L,
+                    actionId,
+                    action,
+                    result,
+                    false,
+                    RealmGovernanceSavedData.ROLE_NONE,
+                    (byte) 0,
+                    "",
+                    "",
+                    "",
+                    0,
+                    0L,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0));
+            return;
+        }
+
+        UUID head = realmAssignment.head();
+        UUID controlledVillageId = realmAssignment.village();
+        Village capital = villageIndex.find(realmView.capitalMost(), realmView.capitalLeast());
+        Village controlled = villageIndex.find(
+                controlledVillageId.getMostSignificantBits(),
+                controlledVillageId.getLeastSignificantBits());
+        int[] totals = new int[5];
+        governance.visitRealm(head, (controllerMost, controllerLeast, villageMost, villageLeast, role) -> {
+            Village village = villageIndex.find(villageMost, villageLeast);
+            if (village != null) {
+                totals[0] = saturatedAdd(totals[0], livingPopulation(village));
+            }
+            if (settlementEconomy != null) {
+                totals[1] = saturatedAdd(totals[1], settlementEconomy.stock(
+                        villageMost, villageLeast, SettlementEconomyEngine.FOOD));
+                totals[2] = saturatedAdd(totals[2], settlementEconomy.stock(
+                        villageMost, villageLeast, SettlementEconomyEngine.IRON));
+                totals[3] = saturatedAdd(totals[3], settlementEconomy.stock(
+                        villageMost, villageLeast, SettlementEconomyEngine.LEATHER));
+                totals[4] = saturatedAdd(totals[4], settlementEconomy.stock(
+                        villageMost, villageLeast, SettlementEconomyEngine.ARROWS));
+            }
+        });
+        int settlementCount = governance.settlementCount(head);
+        int regionCount = governance.regionCount(head);
+        ArmiesNetwork.sendRealm(player, new RealmStatePayload(
+                combinedRealmRevision(realmView.revision(), governance.revision()),
+                actionId,
+                action,
+                result,
+                true,
+                realmAssignment.role(),
+                realmAssignment.government(),
+                boundedUtf8(realmView.name()),
+                boundedUtf8(villageName(capital)),
+                boundedUtf8(villageName(controlled)),
+                realmView.taxRate(),
+                realmView.treasury(),
+                settlementCount,
+                regionCount,
+                totals[0],
+                realmView.capturedSettlements(),
+                totals[1],
+                totals[2],
+                totals[3],
+                totals[4]));
+    }
+
+    private void ensureLegacyGovernance(
+            UUID player,
+            PlayerRealmSavedData realms,
+            RealmGovernanceSavedData governance) {
+        if (governance.readPlayer(player, realmAssignment) || !realms.read(player, realmView)) {
+            return;
+        }
+        UUID capital = new UUID(realmView.capitalMost(), realmView.capitalLeast());
+        if (governance.canFoundCapital(player, capital)) {
+            governance.foundCapital(
+                    player, capital, RealmGovernanceSavedData.GOVERNMENT_FEUDAL);
+        }
+    }
+
+    private long realmRevision(
+            UUID player,
+            PlayerRealmSavedData realms,
+            RealmGovernanceSavedData governance) {
+        if (!governance.readPlayer(player, realmAssignment)
+                || !realms.read(realmAssignment.head(), realmView)) {
+            return 0L;
+        }
+        return combinedRealmRevision(realmView.revision(), governance.revision());
+    }
+
+    private static long combinedRealmRevision(long realmRevision, long governanceRevision) {
+        return Long.MAX_VALUE - realmRevision < governanceRevision
+                ? Long.MAX_VALUE
+                : realmRevision + governanceRevision;
+    }
+
+    private static int livingPopulation(Village village) {
+        int count = 0;
+        if (village != null) {
+            for (VillagerRecord record : village.getVillagerRecords().values()) {
+                if (record != null && !record.isKilled() && count != Integer.MAX_VALUE) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static String villageName(Village village) {
+        if (village == null) {
+            return "";
+        }
+        String name = village.getVillageName();
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        return village.getVillageTypeId() == null ? "Settlement" : village.getVillageTypeId().getPath();
+    }
+
+    private static int saturatedAdd(int left, int right) {
+        return right > Integer.MAX_VALUE - left ? Integer.MAX_VALUE : left + Math.max(0, right);
     }
 
     private void sendRoster(ServerPlayer player, int actionId, byte action, int result, int affected) {

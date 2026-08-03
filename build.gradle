@@ -95,8 +95,8 @@ tasks.register('runPlayerRealmPersistenceSelfTest', JavaExec) {
 
 tasks.register('runFormationCoordinatorSelfTest', JavaExec) {
     group = 'verification'
-    description = 'Checks compact formation slots, assembly gating, cohesion and revision reset.'
-    classpath = sourceSets.main.runtimeClasspath
+    description = 'Checks compact formation slots, assembly gating, tactical roles, cohesion and revision reset.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
     mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyFormationCoordinatorSelfTest'
     jvmArgs '-ea'
     dependsOn classes

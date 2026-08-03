@@ -17,6 +17,7 @@ public final class PackedArmyOrderRevisions {
     private int[] armyHandles = new int[0];
     private int[] orderCodes = new int[0];
     private int[] targetDimensionIds = new int[0];
+    private int[] armyStates = new int[0];
     private long[] packedTargets = new long[0];
     private long[] revisions = new long[0];
     private int[] slotToRow = new int[0];
@@ -28,12 +29,17 @@ public final class PackedArmyOrderRevisions {
         ensureCapacity(capacity);
     }
 
+    /** Compatibility overload for tests and non-formation callers. */
+    public long observe(int armyHandle, int orderCode, int targetDimensionId, long packedTarget) {
+        return observe(armyHandle, orderCode, targetDimensionId, 0, packedTarget);
+    }
+
     /**
      * Observes the current committed value.  A new row starts at revision one; an actual value
      * change increments it; an identical observation is a no-op.
      */
     public long observe(
-            int armyHandle, int orderCode, int targetDimensionId, long packedTarget) {
+            int armyHandle, int orderCode, int targetDimensionId, int armyState, long packedTarget) {
         if (armyHandle == 0) {
             throw new IllegalArgumentException("Zero is not a valid army handle");
         }
@@ -53,12 +59,14 @@ public final class PackedArmyOrderRevisions {
             armyHandles[row] = armyHandle;
             orderCodes[row] = orderCode;
             targetDimensionIds[row] = targetDimensionId;
+            armyStates[row] = armyState;
             packedTargets[row] = packedTarget;
             revisions[row] = 1L;
             return 1L;
         }
         if (orderCodes[row] == orderCode
                 && targetDimensionIds[row] == targetDimensionId
+                && armyStates[row] == armyState
                 && packedTargets[row] == packedTarget) {
             return revisions[row];
         }
@@ -67,6 +75,7 @@ public final class PackedArmyOrderRevisions {
         }
         orderCodes[row] = orderCode;
         targetDimensionIds[row] = targetDimensionId;
+        armyStates[row] = armyState;
         packedTargets[row] = packedTarget;
         return ++revisions[row];
     }
@@ -82,6 +91,14 @@ public final class PackedArmyOrderRevisions {
             throw new IllegalArgumentException("Unknown army order projection: " + armyHandle);
         }
         return orderCodes[row];
+    }
+
+    public int armyState(int armyHandle) {
+        int row = indexOf(armyHandle);
+        if (row < 0) {
+            throw new IllegalArgumentException("Unknown army order projection: " + armyHandle);
+        }
+        return armyStates[row];
     }
 
     public long packedTarget(int armyHandle) {
@@ -108,6 +125,7 @@ public final class PackedArmyOrderRevisions {
         Arrays.fill(armyHandles, 0, size, 0);
         Arrays.fill(orderCodes, 0, size, 0);
         Arrays.fill(targetDimensionIds, 0, size, PackedArmyEcs.UNKNOWN_DIMENSION);
+        Arrays.fill(armyStates, 0, size, 0);
         Arrays.fill(packedTargets, 0, size, 0L);
         Arrays.fill(revisions, 0, size, 0L);
         Arrays.fill(slotToRow, 0);
@@ -133,6 +151,7 @@ public final class PackedArmyOrderRevisions {
         orderCodes = Arrays.copyOf(orderCodes, capacity);
         int oldCapacity = targetDimensionIds.length;
         targetDimensionIds = Arrays.copyOf(targetDimensionIds, capacity);
+        armyStates = Arrays.copyOf(armyStates, capacity);
         Arrays.fill(
                 targetDimensionIds,
                 oldCapacity,

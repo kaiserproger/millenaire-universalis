@@ -102,6 +102,72 @@ public final class MillenaireEntityBridge {
                 : villager;
     }
 
+    /**
+     * Scans a bounded rotating stripe of loaded Millenaire entities around an attack objective.
+     * The caller owns the cursor, so many combatants cannot trigger an all-pairs entity scan.
+     */
+    public MillVillager findHostileTarget(
+            MillVillager source,
+            int sourceFaction,
+            FactionProjectionService factions,
+            double objectiveX,
+            double objectiveZ,
+            double objectiveRadiusSq,
+            double sourceRangeSq,
+            int scanBudget,
+            CombatSearch search,
+            CombatTargetScorer scorer) {
+        if (source == null || factions == null || search == null || size == 0 || scanBudget <= 0) {
+            return null;
+        }
+        int work = Math.min(scanBudget, size);
+        int start = search.cursor >= size ? 0 : search.cursor;
+        MillVillager best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (int offset = 0; offset < work; offset++) {
+            int slot = start + offset;
+            if (slot >= size) slot -= size;
+            MillVillager candidate = villagers[slot];
+            if (candidate == null
+                    || candidate == source
+                    || candidate.isRemoved()
+                    || !candidate.isAlive()
+                    || candidate.level() != source.level()
+                    || candidate.isBaby()
+                    || candidate.isHired()) {
+                continue;
+            }
+            Village village = villages[slot];
+            int targetFaction = factions.factionForVillage(village);
+            if (!factions.isHostile(sourceFaction, targetFaction)) {
+                continue;
+            }
+            double objectiveDx = candidate.getX() - objectiveX;
+            double objectiveDz = candidate.getZ() - objectiveZ;
+            double objectiveDistanceSq = objectiveDx * objectiveDx + objectiveDz * objectiveDz;
+            if (objectiveDistanceSq > objectiveRadiusSq) {
+                continue;
+            }
+            double dx = candidate.getX() - source.getX();
+            double dy = candidate.getY() - source.getY();
+            double dz = candidate.getZ() - source.getZ();
+            double distanceSq = dx * dx + dy * dy + dz * dz;
+            if (distanceSq > sourceRangeSq) {
+                continue;
+            }
+            double score = scorer == null
+                    ? distanceSq
+                    : scorer.score(candidate, targetFaction, distanceSq, objectiveDistanceSq);
+            if (Double.isFinite(score) && score < bestScore) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        search.cursor = start + work;
+        if (search.cursor >= size) search.cursor %= size;
+        return best;
+    }
+
     public int size() {
         return size;
     }
@@ -278,5 +344,24 @@ public final class MillenaireEntityBridge {
         value *= 0xff51afd7ed558ccdL;
         value ^= value >>> 33;
         return (int) (value ^ value >>> 32);
+    }
+
+    @FunctionalInterface
+    public interface CombatTargetScorer {
+        /** Lower finite scores are preferred; non-finite scores reject a candidate. */
+        double score(
+                MillVillager candidate,
+                int targetFaction,
+                double sourceDistanceSq,
+                double objectiveDistanceSq);
+    }
+
+    /** Caller-owned rotating cursor used by one retained combat task. */
+    public static final class CombatSearch {
+        private int cursor;
+
+        public void reset() {
+            cursor = 0;
+        }
     }
 }

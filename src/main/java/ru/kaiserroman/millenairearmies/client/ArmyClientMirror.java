@@ -139,6 +139,10 @@ public interface ArmyClientMirror {
         return 0;
     }
 
+    default int armyFormationCode(int index) {
+        return 0;
+    }
+
     default String armyOrderTarget(int index) {
         return "";
     }
@@ -260,6 +264,24 @@ public interface ArmyClientMirror {
     default String recruitName(int index) { return ""; }
     default String recruitRole(int index) { return ""; }
 
+    default boolean realmFounded() { return false; }
+    default long realmRevision() { return 0L; }
+    default byte realmRoleCode() { return 0; }
+    default byte realmGovernmentCode() { return 0; }
+    default String realmName() { return ""; }
+    default String realmCapitalName() { return ""; }
+    default String realmControlledSettlementName() { return ""; }
+    default int realmTaxRate() { return 0; }
+    default long realmTreasury() { return 0L; }
+    default int realmSettlementCount() { return 0; }
+    default int realmRegionCount() { return 0; }
+    default int realmPopulation() { return 0; }
+    default int realmCapturedSettlementCount() { return 0; }
+    default int realmFood() { return 0; }
+    default int realmIron() { return 0; }
+    default int realmLeather() { return 0; }
+    default int realmArrows() { return 0; }
+
     default int acknowledgedActionId() { return 0; }
     default byte acknowledgedAction() { return 0; }
     default int acknowledgedResult() { return 0; }
@@ -270,6 +292,18 @@ public interface ArmyClientMirror {
      * own target-selection flow before sending a packet; the screen never invents a target.
      */
     default boolean requestIssueOrder(int armyHandleBits, int orderTypeCode) {
+        return false;
+    }
+
+    default boolean requestSetFormation(int armyHandleBits, int formationCode) {
+        return false;
+    }
+
+    default boolean requestFoundRealm(long villageUuidMost, long villageUuidLeast) {
+        return false;
+    }
+
+    default boolean requestSetRealmTax(int taxRate) {
         return false;
     }
 
