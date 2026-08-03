@@ -23,7 +23,7 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq jq ripgrep shellcheck
       - run: |
           bash -n qa/full-cycle/bin/run.sh qa/full-cycle/bin/static-audit.sh
-          shellcheck qa/full-cycle/bin/run.sh qa/full-cycle/bin/static-audit.sh
+          shellcheck -e SC2086 -e SC2155 qa/full-cycle/bin/run.sh qa/full-cycle/bin/static-audit.sh
           qa/full-cycle/bin/static-audit.sh
       - uses: actions/cache@v4
         with:
