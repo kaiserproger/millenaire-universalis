@@ -116,7 +116,7 @@ public final class MillenaireCommandScreen extends Screen {
     private static final int MUTED = 0xFFCEC0A6;
     private static final int SELECTED = 0xCC654D2D;
     private static final int HOVER = 0x99604E38;
-    private static final int ROW_HEIGHT = 28;
+    private static final int ROW_HEIGHT = 24;
     private static final int ORDER_HOLD = 0;
     private static final int ORDER_MOVE = 1;
     private static final int ORDER_RALLY = 2;
@@ -210,37 +210,39 @@ public final class MillenaireCommandScreen extends Screen {
 
     @Override
     protected void init() {
-        panelWidth = Math.max(304, Math.min(780, width - 16));
-        panelHeight = Math.max(220, Math.min(450, height - 16));
+        // A compact military ledger rather than a full-screen web dashboard. The narrow left rail
+        // mirrors Millenaire's book-like menus; field orders live in ArmyCommandHud.
+        panelWidth = Math.min(640, Math.max(304, width - 28));
+        panelHeight = Math.min(370, Math.max(220, height - 28));
         panelX = (width - panelWidth) / 2;
         panelY = (height - panelHeight) / 2;
-        contentX = panelX + 9;
-        contentY = panelY + 66;
-        contentWidth = panelWidth - 18;
-        contentHeight = panelHeight - 129;
-        listWidth = Math.max(126, Math.min(295, contentWidth * 42 / 100));
-
-        tabWidth = Math.max(40, (panelWidth - 18) / StrategicTab.VALUES.length);
         tabsX = panelX + 9;
+        tabWidth = 78;
+        contentX = panelX + 94;
+        contentY = panelY + 36;
+        contentWidth = panelWidth - 104;
+        contentHeight = panelHeight - 89;
+        listWidth = Math.max(118, Math.min(218, contentWidth * 41 / 100));
+
         for (int i = 0; i < StrategicTab.VALUES.length; i++) {
             final StrategicTab target = StrategicTab.VALUES[i];
             Button button = Button.builder(target.title, ignored -> selectTab(target))
-                    .bounds(tabsX + i * tabWidth, panelY + 39, tabWidth - 2, 20)
+                    .bounds(tabsX, panelY + 39 + i * 24, tabWidth, 20)
                     .build();
             tabButtons[i] = addRenderableWidget(button);
         }
 
-        int actionY = panelY + panelHeight - 30;
-        int commandY = actionY - 24;
-        int actionAreaWidth = panelWidth - 86;
-        int orderButtonWidth = Math.max(42, (actionAreaWidth - 6) / 4);
-        int actionX = panelX + 10;
+        int actionY = panelY + panelHeight - 27;
+        int commandY = actionY - 23;
+        int actionX = contentX;
+        int actionAreaWidth = contentWidth - 60;
+        int orderButtonWidth = Math.max(30, (actionAreaWidth - 6) / 4);
         holdButton = actionButton("gui.millenaire_armies.action.hold", actionX, commandY, orderButtonWidth, ORDER_HOLD);
         moveButton = actionButton("gui.millenaire_armies.action.move", actionX + orderButtonWidth + 2, commandY, orderButtonWidth, ORDER_MOVE);
         rallyButton = actionButton("gui.millenaire_armies.action.rally", actionX + (orderButtonWidth + 2) * 2, commandY, orderButtonWidth, ORDER_RALLY);
         attackButton = actionButton("gui.millenaire_armies.action.attack", actionX + (orderButtonWidth + 2) * 3, commandY, orderButtonWidth, ORDER_ATTACK);
 
-        int secondaryButtonWidth = Math.max(72, (actionAreaWidth - 4) / 2);
+        int secondaryButtonWidth = Math.max(60, (actionAreaWidth - 4) / 2);
         formationButton = addRenderableWidget(Button.builder(
                         Component.translatable("gui.millenaire_armies.action.formation"), ignored -> cycleFormation())
                 .bounds(actionX, actionY, secondaryButtonWidth, 20)
@@ -343,13 +345,13 @@ public final class MillenaireCommandScreen extends Screen {
             resetCancelConfirmation();
         }
         if (feedback != null && now < feedbackUntilMillis) {
-            graphics.drawCenteredString(font, feedback, panelX + panelWidth / 2, panelY + panelHeight - 43, GOLD);
+            graphics.drawCenteredString(font, feedback, panelX + panelWidth / 2, panelY + 25, GOLD);
         }
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
-        graphics.fill(tabsX + tab.ordinal() * tabWidth, panelY + 60,
-                tabsX + (tab.ordinal() + 1) * tabWidth - 2, panelY + 62, GOLD);
+        int selectedTabY = panelY + 39 + tab.ordinal() * 24;
+        graphics.fill(tabsX - 3, selectedTabY, tabsX - 1, selectedTabY + 20, GOLD);
     }
 
     private void drawFrame(GuiGraphics graphics) {
@@ -357,27 +359,32 @@ public final class MillenaireCommandScreen extends Screen {
         outline(graphics, panelX, panelY, panelWidth, panelHeight, BORDER);
         outline(graphics, panelX + 3, panelY + 3, panelWidth - 6, panelHeight - 6, BORDER_DARK);
         graphics.fill(panelX + 7, panelY + 7, panelX + panelWidth - 7, panelY + 34, PANEL_ALT);
-        graphics.drawString(font, TITLE, panelX + 14, panelY + 15, GOLD, true);
+        graphics.drawString(font, TITLE, panelX + 14, panelY + 13, GOLD, true);
         String realm = cachedMirror.realmFounded()
                 ? safe(cachedMirror.realmName())
                 : safe(cachedMirror.playerFactionName());
         if (!realm.isEmpty()) {
-            graphics.drawString(font, realm, panelX + panelWidth - 14 - font.width(realm), panelY + 15, TEXT, true);
+            String compactRealm = font.plainSubstrByWidth(realm, Math.max(40, panelWidth / 3));
+            graphics.drawString(font, compactRealm,
+                    panelX + panelWidth - 14 - font.width(compactRealm), panelY + 13, TEXT, true);
         }
+        graphics.fill(panelX + 7, panelY + 36, contentX - 6, panelY + panelHeight - 10, PANEL_ALT);
+        outline(graphics, panelX + 7, panelY + 36, contentX - panelX - 13, panelHeight - 46, BORDER_DARK);
         graphics.fill(contentX, contentY, contentX + contentWidth, contentY + contentHeight, PANEL_INNER);
         outline(graphics, contentX, contentY, contentWidth, contentHeight, BORDER_DARK);
     }
 
     private void renderOverview(GuiGraphics graphics) {
-        int gap = 6;
-        int cardWidth = (contentWidth - gap * 3) / 4;
-        drawMetricCard(graphics, contentX, contentY, cardWidth, METRIC_FACTIONS, factionCountText);
-        drawMetricCard(graphics, contentX + cardWidth + gap, contentY, cardWidth, METRIC_ARMIES, armyCountText);
-        drawMetricCard(graphics, contentX + (cardWidth + gap) * 2, contentY, cardWidth, METRIC_UNITS, unitCountText);
-        drawMetricCard(graphics, contentX + (cardWidth + gap) * 3, contentY, cardWidth, METRIC_ROUTES, logisticsCountText);
+        Component counts = Component.translatable(
+                "gui.millenaire_armies.summary.council",
+                factionCountText,
+                armyCountText,
+                unitCountText,
+                logisticsCountText);
+        graphics.drawString(font, counts, contentX + 7, contentY + 7, MUTED, false);
 
-        int boxY = contentY + 46;
-        int boxHeight = contentHeight - 46;
+        int boxY = contentY + 23;
+        int boxHeight = contentHeight - 23;
         int detailStep = Math.max(10, Math.min(14, (boxHeight - 26) / 4));
         int half = (contentWidth - 6) / 2;
         sectionBox(graphics, contentX, boxY, half, boxHeight, LABEL_DIPLOMACY);
@@ -417,7 +424,7 @@ public final class MillenaireCommandScreen extends Screen {
                 Component summary = Component.translatable("gui.millenaire_armies.summary.settlement",
                         cachedMirror.settlementPopulation(row),
                         cachedMirror.settlementAvailableRecruitCount(row));
-                graphics.drawString(font, summary, contentX + 8, y + 16, MUTED, false);
+                graphics.drawString(font, summary, contentX + 8, y + 14, MUTED, false);
             }
         }
 
@@ -451,7 +458,7 @@ public final class MillenaireCommandScreen extends Screen {
                         rightX + 7, y + 5, selected ? GOLD : TEXT, true);
                 Component summary = Component.translatable("gui.millenaire_armies.summary.recruit",
                         safe(cachedMirror.recruitRole(row)), cachedMirror.recruitStrength(row));
-                graphics.drawString(font, summary, rightX + 7, y + 16, MUTED, false);
+                graphics.drawString(font, summary, rightX + 7, y + 14, MUTED, false);
             }
         }
 
@@ -551,7 +558,7 @@ public final class MillenaireCommandScreen extends Screen {
                 Component summary = Component.translatable("gui.millenaire_armies.summary.settlement",
                         cachedMirror.settlementPopulation(row),
                         cachedMirror.settlementAvailableRecruitCount(row));
-                graphics.drawString(font, summary, contentX + 8, y + 16, MUTED, false);
+                graphics.drawString(font, summary, contentX + 8, y + 14, MUTED, false);
             }
         }
 
@@ -709,7 +716,7 @@ public final class MillenaireCommandScreen extends Screen {
                 graphics.fill(contentX + 3, y, listRight - 2, y + ROW_HEIGHT - 2, selected ? SELECTED : HOVER);
             }
             graphics.drawString(font, kind.name(cachedMirror, index), contentX + 8, y + 5, selected ? GOLD : TEXT, true);
-            graphics.drawString(font, kind.summary(cachedMirror, index), contentX + 8, y + 16, MUTED, false);
+            graphics.drawString(font, kind.summary(cachedMirror, index), contentX + 8, y + 14, MUTED, false);
         }
         graphics.disableScissor();
         if (count > visible) {
@@ -1047,6 +1054,12 @@ public final class MillenaireCommandScreen extends Screen {
     }
 
     private void updateButtons() {
+        for (int index = 0; index < tabButtons.length; index++) {
+            if (tabButtons[index] != null) {
+                tabButtons[index].active = index != tab.ordinal();
+                tabButtons[index].visible = true;
+            }
+        }
         boolean armyActions = tab == StrategicTab.ARMIES && hasSelectedArmy;
         setState(holdButton, armyActions, tab == StrategicTab.ARMIES);
         setState(moveButton, armyActions, tab == StrategicTab.ARMIES);

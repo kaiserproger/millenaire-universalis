@@ -10,6 +10,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.world.phys.BlockHitResult;
@@ -17,6 +18,7 @@ import net.minecraft.world.phys.HitResult;
 import org.millenaire.client.gui.ControlledMilitaryScreen;
 import org.lwjgl.glfw.GLFW;
 import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.client.ui.ArmyCommandHud;
 import ru.kaiserroman.millenairearmies.client.ui.MillenaireCommandScreen;
 
 /** Physical-client hooks. The Dist gate keeps every referenced Minecraft client class off a server. */
@@ -31,6 +33,11 @@ public final class ArmyClientEvents {
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_J,
                 "key.categories.millenaire_armies");
+        private static final KeyMapping TOGGLE_FIELD_COMMAND = new KeyMapping(
+                "key.millenaire_armies.toggle_field_command",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_K,
+                "key.categories.millenaire_armies");
 
         private Registration() {
         }
@@ -38,6 +45,7 @@ public final class ArmyClientEvents {
         @SubscribeEvent
         public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
             event.register(OPEN_COMMAND);
+            event.register(TOGGLE_FIELD_COMMAND);
             ArmyClientScreenBridge.install(() -> Minecraft.getInstance().setScreen(new MillenaireCommandScreen()));
         }
     }
@@ -50,6 +58,14 @@ public final class ArmyClientEvents {
         @SubscribeEvent
         public static void clientTick(ClientTickEvent.Post event) {
             Minecraft minecraft = Minecraft.getInstance();
+            if (Registration.TOGGLE_FIELD_COMMAND.consumeClick()) {
+                while (Registration.TOGGLE_FIELD_COMMAND.consumeClick()) {
+                    // Drain repeat clicks.
+                }
+                if (minecraft.player != null && minecraft.screen == null) {
+                    ArmyCommandHud.toggle();
+                }
+            }
             if (!Registration.OPEN_COMMAND.consumeClick()) {
                 return;
             }
@@ -61,8 +77,18 @@ public final class ArmyClientEvents {
 
             if (minecraft.player != null
                     && (minecraft.screen == null || minecraft.screen instanceof ControlledMilitaryScreen)) {
-                minecraft.setScreen(new MillenaireCommandScreen());
+                boolean hasSelectedArmy = ArmyCommandHud.hasSelectedArmy();
+                int selectedArmy = ArmyCommandHud.selectedArmyId();
+                ArmyCommandHud.deactivate();
+                minecraft.setScreen(hasSelectedArmy
+                        ? new MillenaireCommandScreen(selectedArmy)
+                        : new MillenaireCommandScreen());
             }
+        }
+
+        @SubscribeEvent
+        public static void renderGui(RenderGuiEvent.Post event) {
+            ArmyCommandHud.render(event.getGuiGraphics());
         }
 
         @SubscribeEvent
@@ -91,7 +117,9 @@ public final class ArmyClientEvents {
                     && event.getKey() == GLFW.GLFW_KEY_ESCAPE
                     && event.getAction() == GLFW.GLFW_PRESS) {
                 ArmyTargetSelection.cancelFromEscape();
+                return;
             }
+            ArmyCommandHud.handleKey(event.getKey(), event.getAction(), event.getModifiers());
         }
 
         @SubscribeEvent
@@ -112,6 +140,7 @@ public final class ArmyClientEvents {
         public static void disconnected(ClientPlayerNetworkEvent.LoggingOut event) {
             ArmyClientState.clear();
             ArmyTargetSelection.clear();
+            ArmyCommandHud.deactivate();
         }
     }
 }
