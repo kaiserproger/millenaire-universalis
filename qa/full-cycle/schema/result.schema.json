@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bannerok.invalid/schema/army-full-cycle-result.v1.json",
+  "type": "object",
+  "required": ["schema", "status", "checks"],
+  "properties": {
+    "schema": {"const": "bannerok.army-full-cycle-run.v1"},
+    "status": {"enum": ["pass", "fail", "not_run"]},
+    "failure": {"type": ["string", "null"]},
+    "checks": {
+      "type": "object",
+      "required": [
+        "dedicatedBoot",
+        "settlement",
+        "settlementResources",
+        "controlledArmy",
+        "recruitment",
+        "dimensionPersisted",
+        "move",
+        "rally",
+        "hold",
+        "logistics",
+        "chunkUnloadReload",
+        "restartPersistence",
+        "foreignDenied",
+        "malformedDenied",
+        "noFatalLog",
+        "resources"
+      ],
+      "additionalProperties": {"type": "boolean"}
+    },
+    "artifacts": {"type": "object"}
+  },
+  "additionalProperties": true
+}

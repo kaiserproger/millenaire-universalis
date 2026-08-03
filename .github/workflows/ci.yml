@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            vendor
+          key: millenaire-armies-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'scripts/materialize-dependencies.py') }}
+      - run: python3 scripts/materialize-dependencies.py
+      - run: ./gradlew --no-daemon --no-parallel --no-configuration-cache clean check build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: millenaire-armies
+          path: build/libs/millenaire_armies-*.jar
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: millenaire-armies
+          path: release
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/*.jar --verify-tag --generate-notes
+

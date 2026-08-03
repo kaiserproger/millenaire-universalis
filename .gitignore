@@ -1,0 +1,9 @@
+.gradle/
+build/
+bin/
+logs/
+runs/
+run/
+vendor/*.jar
+*.class
+hs_err_pid*

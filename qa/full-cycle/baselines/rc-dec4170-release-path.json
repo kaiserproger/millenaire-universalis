@@ -1,0 +1,29 @@
+{
+  "artifacts": {
+    "runId": "rc-dec4170-release-path-v4",
+    "serverLogSha256": "87695ec706f446b05d38545825f9cef4948d464e692e06d1829bc10cac9f1c8c",
+    "sourceCommit": "dec4170779708d44d7aed00a1839176fea6a3351",
+    "stateSha256": "83a4185fcca41c0cd142ef71e612142b49957821c1151632aea8b6ce5ac15963"
+  },
+  "checks": {
+    "chunkUnloadReload": false,
+    "controlledArmy": false,
+    "dedicatedBoot": true,
+    "dimensionPersisted": false,
+    "foreignDenied": false,
+    "hold": false,
+    "logistics": false,
+    "malformedDenied": false,
+    "move": false,
+    "noFatalLog": false,
+    "rally": false,
+    "recruitment": false,
+    "resources": true,
+    "restartPersistence": false,
+    "settlement": true,
+    "settlementResources": true
+  },
+  "failure": "raise_denied: non-OP owner could not raise an army from the controlled settlement",
+  "schema": "bannerok.army-full-cycle-run.v1",
+  "status": "fail"
+}

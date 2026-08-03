@@ -1,15 +1,80 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+}
+
+dependencies {
+    implementation "net.neoforged:neoforge:${neo_version}"
+}
+
+sourceSets.main.resources {
+    srcDir('src/generated/resources')
+    exclude('**/*.bbmodel')
+    exclude('src/generated/**/.cache')
+}
+
+tasks.withType(ProcessResources).configureEach {
+    def replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_description        : mod_description,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+    ]
+    inputs.properties replaceProperties
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand replaceProperties
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+}
+
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
 dependencies {
-    compileOnly files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
+    compileOnly files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
 
     // Opt-in only: load the assembled client/server content while exercising the real UI against
     // the dedicated server.  Production artifacts remain unchanged and the source-set armies mod
     // is deliberately not duplicated by the deployed JAR.
     if (rootProject.findProperty('fullClientSmoke') == 'true') {
-        runtimeOnly fileTree(rootProject.file('../mods')) {
+        runtimeOnly fileTree(rootProject.file('vendor')) {
             include '*.jar'
             exclude 'millenaire_armies-*.jar'
             exclude 'sarvaroptimizer_*.jar'
@@ -96,7 +161,7 @@ tasks.register('runPlayerRealmPersistenceSelfTest', JavaExec) {
 tasks.register('runFormationCoordinatorSelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks compact formation slots, assembly gating, tactical roles, cohesion and revision reset.'
-    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
     mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyFormationCoordinatorSelfTest'
     jvmArgs '-ea'
     dependsOn classes
@@ -114,7 +179,7 @@ tasks.register('runOrderExecutionStateSelfTest', JavaExec) {
 tasks.register('runOrderExecutionIntegrationSmoke', JavaExec) {
     group = 'verification'
     description = 'Runs order revision, auth, dimension, reload and 1000-unit allocation smoke checks.'
-    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('../mods/millenaire-9.0.0-beta.2.jar'))
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
     mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionIntegrationSmoke'
     jvmArgs '-ea'
     dependsOn classes
