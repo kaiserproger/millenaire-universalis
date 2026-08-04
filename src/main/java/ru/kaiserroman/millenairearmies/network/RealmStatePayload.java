@@ -4,6 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import ru.kaiserroman.millenaire.realm.GovernmentForm;
 import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
 import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 
@@ -43,8 +44,8 @@ public record RealmStatePayload(
                 || acknowledgementResult > ArmiesProtocol.RESULT_PARTIAL
                 || role < RealmGovernanceSavedData.ROLE_NONE
                 || role > RealmGovernanceSavedData.ROLE_GOVERNOR
-                || government < 0 || government > RealmGovernanceSavedData.GOVERNMENT_ADMINISTRATIVE
-                || taxRate < 0 || taxRate > 25 || treasury < 0L
+                || government < 0 || government > GovernmentForm.values().length
+                || taxRate < 0 || taxRate > 100 || treasury < 0L
                 || settlementCount < 0 || regionCount < 0 || regionCount > settlementCount
                 || population < 0 || capturedSettlements < 0
                 || food < 0 || iron < 0 || leather < 0 || arrows < 0) {
@@ -84,7 +85,7 @@ public record RealmStatePayload(
                 payload.controlledSettlementName,
                 MAX_STRING_UTF8_BYTES,
                 "controlled settlement name");
-        BoundedCodecs.writeCount(buffer, payload.taxRate, 25, "taxRate");
+        BoundedCodecs.writeCount(buffer, payload.taxRate, 100, "taxRate");
         buffer.writeVarLong(payload.treasury);
         BoundedCodecs.writeCount(buffer, payload.settlementCount, Integer.MAX_VALUE, "settlements");
         BoundedCodecs.writeCount(buffer, payload.regionCount, Integer.MAX_VALUE, "regions");
@@ -108,7 +109,7 @@ public record RealmStatePayload(
                 BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "realm name"),
                 BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "capital name"),
                 BoundedCodecs.readUtf8(buffer, MAX_STRING_UTF8_BYTES, "controlled settlement name"),
-                BoundedCodecs.readCount(buffer, 25, "taxRate"),
+                BoundedCodecs.readCount(buffer, 100, "taxRate"),
                 buffer.readVarLong(),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "settlements"),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "regions"),

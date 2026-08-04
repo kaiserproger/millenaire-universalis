@@ -6,10 +6,11 @@ import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
+import ru.kaiserroman.millenairearmies.server.unit.PackedUnitRoleState;
 
 /** Primitive-array NBT codec. All object allocation is confined to the cold save/load boundary. */
 final class ArmyNbtCodec {
-    static final int SCHEMA_VERSION = 2;
+    static final int SCHEMA_VERSION = 6;
     private static final int LEGACY_SCHEMA_VERSION = 1;
 
     private static final int MAX_ECS_ROWS = 1 << 20;
@@ -25,6 +26,9 @@ final class ArmyNbtCodec {
     private static final String TAG_COMMANDS = "Commands";
     private static final String TAG_LOGISTICS = "Logistics";
     private static final String TAG_SETTLEMENT_ECONOMY = "SettlementEconomy";
+    private static final String TAG_GARRISONS = "Garrisons";
+    private static final String TAG_UNIT_ROLES = "UnitRoles";
+    private static final String TAG_ARMY_SUPPLIES = "ArmySupplies";
     private static final String TAG_COUNT = "Count";
 
     private ArmyNbtCodec() {
@@ -41,7 +45,10 @@ final class ArmyNbtCodec {
             long armyRevision,
             PackedCommandState commands,
             PackedLogisticsState logistics,
-            PackedSettlementEconomyState settlementEconomy) {
+            PackedSettlementEconomyState settlementEconomy,
+            PackedGarrisonState garrisons,
+            PackedUnitRoleState unitRoles,
+            PackedArmySupplyState armySupplies) {
         root.putInt(TAG_SCHEMA_VERSION, SCHEMA_VERSION);
 
         ListTag dimensionNames = new ListTag();
@@ -134,6 +141,73 @@ final class ArmyNbtCodec {
         controllerTag.putByteArray("Present", controllerPresent);
         root.put(TAG_CONTROLLERS, controllerTag);
 
+        int garrisonCount = garrisons.size();
+        int[] garrisonArmyRows = new int[garrisonCount];
+        long[] garrisonVillageMost = new long[garrisonCount];
+        long[] garrisonVillageLeast = new long[garrisonCount];
+        int[] garrisonDimensions = new int[garrisonCount];
+        long[] garrisonMusterPositions = new long[garrisonCount];
+        int[] garrisonRadii = new int[garrisonCount];
+        int[] garrisonSupply = new int[garrisonCount];
+        int[] garrisonReadiness = new int[garrisonCount];
+        int[] garrisonMorale = new int[garrisonCount];
+        byte[] garrisonStatuses = new byte[garrisonCount];
+        long[] garrisonNextUpkeepTicks = new long[garrisonCount];
+        long[] garrisonRevisions = new long[garrisonCount];
+        PackedGarrisonState.Cursor garrisonCursor = garrisons.newCursor();
+        row = 0;
+        for (garrisonCursor.reset(); garrisonCursor.advance(); row++) {
+            garrisonArmyRows[row] = persistentArmyRow(garrisonCursor.armyHandle(), armyRows, "garrison");
+            garrisonVillageMost[row] = garrisonCursor.villageMost();
+            garrisonVillageLeast[row] = garrisonCursor.villageLeast();
+            garrisonDimensions[row] = garrisonCursor.dimensionId();
+            requireDimensionId(dimensions, garrisonDimensions[row], "garrison");
+            garrisonMusterPositions[row] = garrisonCursor.musterPosition();
+            garrisonRadii[row] = garrisonCursor.guardRadius();
+            garrisonSupply[row] = garrisonCursor.supplyPercent();
+            garrisonReadiness[row] = garrisonCursor.readinessPercent();
+            garrisonMorale[row] = garrisonCursor.moralePercent();
+            garrisonStatuses[row] = garrisonCursor.status();
+            garrisonNextUpkeepTicks[row] = garrisonCursor.nextUpkeepTick();
+            garrisonRevisions[row] = garrisonCursor.revision();
+        }
+        CompoundTag garrisonTag = new CompoundTag();
+        garrisonTag.putInt(TAG_COUNT, garrisonCount);
+        garrisonTag.putLong("NextRevision", garrisons.nextRevision());
+        garrisonTag.putIntArray("ArmyRows", garrisonArmyRows);
+        garrisonTag.putLongArray("VillageMost", garrisonVillageMost);
+        garrisonTag.putLongArray("VillageLeast", garrisonVillageLeast);
+        garrisonTag.putIntArray("Dimensions", garrisonDimensions);
+        garrisonTag.putLongArray("MusterPositions", garrisonMusterPositions);
+        garrisonTag.putIntArray("GuardRadii", garrisonRadii);
+        garrisonTag.putIntArray("Supply", garrisonSupply);
+        garrisonTag.putIntArray("Readiness", garrisonReadiness);
+        garrisonTag.putIntArray("Morale", garrisonMorale);
+        garrisonTag.putByteArray("Statuses", garrisonStatuses);
+        garrisonTag.putLongArray("NextUpkeepTicks", garrisonNextUpkeepTicks);
+        garrisonTag.putLongArray("Revisions", garrisonRevisions);
+        root.put(TAG_GARRISONS, garrisonTag);
+
+        int supplyBindingCount = armySupplies.size();
+        int[] supplyArmyRows = new int[supplyBindingCount];
+        int[] supplyDimensions = new int[supplyBindingCount];
+        long[] supplyChestPositions = new long[supplyBindingCount];
+        PackedArmySupplyState.Cursor supplyCursor = armySupplies.newCursor();
+        row = 0;
+        for (supplyCursor.reset(); supplyCursor.advance(); row++) {
+            supplyArmyRows[row] = persistentArmyRow(supplyCursor.armyHandle(), armyRows, "army supply chest");
+            supplyDimensions[row] = supplyCursor.dimensionId();
+            requireDimensionId(dimensions, supplyDimensions[row], "army supply chest");
+            supplyChestPositions[row] = supplyCursor.chestPosition();
+        }
+        CompoundTag supplyTag = new CompoundTag();
+        supplyTag.putInt(TAG_COUNT, supplyBindingCount);
+        supplyTag.putLong("Revision", armySupplies.revision());
+        supplyTag.putIntArray("ArmyRows", supplyArmyRows);
+        supplyTag.putIntArray("Dimensions", supplyDimensions);
+        supplyTag.putLongArray("ChestPositions", supplyChestPositions);
+        root.put(TAG_ARMY_SUPPLIES, supplyTag);
+
         int unitCount = ecs.unitSize();
         int[] unitArmyRows = new int[unitCount];
         int[] unitOrders = new int[unitCount];
@@ -142,6 +216,7 @@ final class ArmyNbtCodec {
         byte[] unitIdentityPresent = new byte[unitCount];
         long[] unitUuidMost = new long[unitCount];
         long[] unitUuidLeast = new long[unitCount];
+        IntIntTable unitRows = new IntIntTable(unitCount);
         IntIntTable membershipRows = new IntIntTable(memberships.size());
         long[] membershipUuidMost = new long[memberships.size()];
         long[] membershipUuidLeast = new long[memberships.size()];
@@ -163,6 +238,7 @@ final class ArmyNbtCodec {
             unitOrders[row] = unitCursor.order();
             unitStates[row] = unitCursor.state();
             unitPositions[row] = unitCursor.packedPos();
+            unitRows.put(unitCursor.handle(), row);
             int identityRow = membershipRows.get(unitCursor.handle());
             if (identityRow >= 0) {
                 unitIdentityPresent[row] = 1;
@@ -181,6 +257,42 @@ final class ArmyNbtCodec {
         unitTag.putLongArray("UuidMost", unitUuidMost);
         unitTag.putLongArray("UuidLeast", unitUuidLeast);
         root.put(TAG_UNITS, unitTag);
+
+        int roleCount = unitRoles.size();
+        int[] roleUnitRows = new int[roleCount];
+        int[] roleTokens = new int[roleCount];
+        int[] rankTokens = new int[roleCount];
+        int[] loadoutTokens = new int[roleCount];
+        byte[] troopClasses = new byte[roleCount];
+        byte[] unpaidCycles = new byte[roleCount];
+        byte[] roleFlags = new byte[roleCount];
+        PackedUnitRoleState.Cursor unitRoleCursor = unitRoles.newCursor();
+        int roleRow = 0;
+        for (unitRoleCursor.reset(); unitRoleCursor.advance(); roleRow++) {
+            int unitRow = unitRows.get(unitRoleCursor.unitHandle());
+            if (unitRow < 0) {
+                throw new IllegalStateException(
+                        "Cannot save UnitRoles referencing stale unit handle " + unitRoleCursor.unitHandle());
+            }
+            roleUnitRows[roleRow] = unitRow;
+            roleTokens[roleRow] = unitRoleCursor.roleToken();
+            rankTokens[roleRow] = unitRoleCursor.rankToken();
+            loadoutTokens[roleRow] = unitRoleCursor.loadoutToken();
+            troopClasses[roleRow] = unitRoleCursor.troopClass();
+            unpaidCycles[roleRow] = (byte) unitRoleCursor.unpaidCycles();
+            roleFlags[roleRow] = unitRoleCursor.flags();
+        }
+        CompoundTag unitRoleTag = new CompoundTag();
+        unitRoleTag.putInt(TAG_COUNT, roleCount);
+        unitRoleTag.putLong("Revision", unitRoles.revision());
+        unitRoleTag.putIntArray("UnitRows", roleUnitRows);
+        unitRoleTag.putIntArray("RoleTokens", roleTokens);
+        unitRoleTag.putIntArray("RankTokens", rankTokens);
+        unitRoleTag.putIntArray("LoadoutTokens", loadoutTokens);
+        unitRoleTag.putByteArray("TroopClasses", troopClasses);
+        unitRoleTag.putByteArray("UnpaidCycles", unpaidCycles);
+        unitRoleTag.putByteArray("Flags", roleFlags);
+        root.put(TAG_UNIT_ROLES, unitRoleTag);
 
         int commandCount = commands.size();
         long[] orderIds = new long[commandCount];
@@ -292,10 +404,10 @@ final class ArmyNbtCodec {
             int maxSettlements,
             int maxSettlementShipments) {
         int schemaVersion = root.getInt(TAG_SCHEMA_VERSION);
-        if (schemaVersion != LEGACY_SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion < LEGACY_SCHEMA_VERSION || schemaVersion > SCHEMA_VERSION) {
             throw new IllegalArgumentException(
                     "Unsupported Millenaire Armies save schema " + schemaVersion
-                            + "; expected " + LEGACY_SCHEMA_VERSION + " or " + SCHEMA_VERSION);
+                            + "; expected " + LEGACY_SCHEMA_VERSION + ".." + SCHEMA_VERSION);
         }
 
         ListTag dimensionNames = root.getList(TAG_DIMENSIONS, Tag.TAG_STRING);
@@ -373,6 +485,7 @@ final class ArmyNbtCodec {
         byte[] unitIdentityPresent = requiredByteArray(unitTag, "IdentityPresent", unitCount, TAG_UNITS);
         long[] unitUuidMost = requiredLongArray(unitTag, "UuidMost", unitCount, TAG_UNITS);
         long[] unitUuidLeast = requiredLongArray(unitTag, "UuidLeast", unitCount, TAG_UNITS);
+        int[] restoredUnitHandles = new int[unitCount];
 
         PackedArmyEcs ecs = new PackedArmyEcs(armyCount, unitCount);
         PackedUnitMembership memberships = new PackedUnitMembership();
@@ -414,14 +527,120 @@ final class ArmyNbtCodec {
                     controllerUuidLeast[controllerRow],
                     controllerPresent[controllerRow] != 0);
         }
+        PackedGarrisonState garrisons = new PackedGarrisonState();
+        if (root.contains(TAG_GARRISONS)) {
+            CompoundTag garrisonTag = root.getCompound(TAG_GARRISONS);
+            int garrisonCount = checkedCount(garrisonTag, TAG_GARRISONS, armyCount);
+            int[] garrisonArmyRows = requiredIntArray(garrisonTag, "ArmyRows", garrisonCount, TAG_GARRISONS);
+            long[] garrisonVillageMost = requiredLongArray(garrisonTag, "VillageMost", garrisonCount, TAG_GARRISONS);
+            long[] garrisonVillageLeast = requiredLongArray(garrisonTag, "VillageLeast", garrisonCount, TAG_GARRISONS);
+            int[] garrisonDimensions = requiredIntArray(garrisonTag, "Dimensions", garrisonCount, TAG_GARRISONS);
+            long[] garrisonMusterPositions = requiredLongArray(garrisonTag, "MusterPositions", garrisonCount, TAG_GARRISONS);
+            int[] garrisonRadii = requiredIntArray(garrisonTag, "GuardRadii", garrisonCount, TAG_GARRISONS);
+            int[] garrisonSupply = requiredIntArray(garrisonTag, "Supply", garrisonCount, TAG_GARRISONS);
+            int[] garrisonReadiness = requiredIntArray(garrisonTag, "Readiness", garrisonCount, TAG_GARRISONS);
+            int[] garrisonMorale = requiredIntArray(garrisonTag, "Morale", garrisonCount, TAG_GARRISONS);
+            byte[] garrisonStatuses = requiredByteArray(garrisonTag, "Statuses", garrisonCount, TAG_GARRISONS);
+            long[] garrisonNextUpkeepTicks = requiredLongArray(garrisonTag, "NextUpkeepTicks", garrisonCount, TAG_GARRISONS);
+            long[] garrisonRevisions = requiredLongArray(garrisonTag, "Revisions", garrisonCount, TAG_GARRISONS);
+            garrisons.reserve(garrisonCount);
+            for (int garrisonRow = 0; garrisonRow < garrisonCount; garrisonRow++) {
+                int armyHandle = restoredArmyHandle(garrisonArmyRows[garrisonRow], restoredArmyHandles, "garrison");
+                requireDimensionId(dimensions, garrisonDimensions[garrisonRow], "garrison");
+                garrisons.restore(
+                        armyHandle,
+                        garrisonVillageMost[garrisonRow],
+                        garrisonVillageLeast[garrisonRow],
+                        garrisonDimensions[garrisonRow],
+                        garrisonMusterPositions[garrisonRow],
+                        garrisonRadii[garrisonRow],
+                        garrisonSupply[garrisonRow],
+                        garrisonReadiness[garrisonRow],
+                        garrisonMorale[garrisonRow],
+                        garrisonStatuses[garrisonRow],
+                        garrisonNextUpkeepTicks[garrisonRow],
+                        garrisonRevisions[garrisonRow]);
+            }
+            garrisons.restoreNextRevision(garrisonTag.getLong("NextRevision"));
+        }
+
+        PackedArmySupplyState armySupplies = new PackedArmySupplyState();
+        if (schemaVersion >= 5) {
+            CompoundTag supplyTag = root.getCompound(TAG_ARMY_SUPPLIES);
+            int supplyCount = checkedCount(supplyTag, TAG_ARMY_SUPPLIES, armyCount);
+            int[] supplyArmyRows = requiredIntArray(supplyTag, "ArmyRows", supplyCount, TAG_ARMY_SUPPLIES);
+            int[] supplyDimensions = requiredIntArray(supplyTag, "Dimensions", supplyCount, TAG_ARMY_SUPPLIES);
+            long[] supplyPositions = requiredLongArray(
+                    supplyTag, "ChestPositions", supplyCount, TAG_ARMY_SUPPLIES);
+            byte[] seenSupplyArmies = new byte[armyCount];
+            for (int supplyRow = 0; supplyRow < supplyCount; supplyRow++) {
+                int armyRow = supplyArmyRows[supplyRow];
+                int armyHandle = restoredArmyHandle(armyRow, restoredArmyHandles, "army supply chest");
+                if (armyHandle == PackedArmyEcs.NO_ARMY || seenSupplyArmies[armyRow] != 0) {
+                    throw new IllegalArgumentException("Invalid duplicate persisted army supply row " + supplyRow);
+                }
+                seenSupplyArmies[armyRow] = 1;
+                requireDimensionId(dimensions, supplyDimensions[supplyRow], "army supply chest");
+                armySupplies.restoreRow(
+                        armyHandle, supplyDimensions[supplyRow], supplyPositions[supplyRow]);
+            }
+            armySupplies.restoreRevision(supplyTag.getLong("Revision"));
+        }
+
         for (int unitRow = 0; unitRow < unitCount; unitRow++) {
             int armyHandle = restoredArmyHandle(unitArmyRows[unitRow], restoredArmyHandles, "unit");
-            int unitHandle = ecs.createUnit(armyHandle, unitOrders[unitRow], unitStates[unitRow], unitPositions[unitRow]);
+            int unitHandle =
+                    ecs.createUnit(armyHandle, unitOrders[unitRow], unitStates[unitRow], unitPositions[unitRow]);
+            restoredUnitHandles[unitRow] = unitHandle;
             if (unitIdentityPresent[unitRow] == 1) {
                 memberships.bind(unitHandle, unitUuidMost[unitRow], unitUuidLeast[unitRow]);
             } else if (unitIdentityPresent[unitRow] != 0) {
                 throw new IllegalArgumentException("Persisted unit identity flag is not 0/1");
             }
+        }
+
+        PackedUnitRoleState unitRoles = new PackedUnitRoleState();
+        if (schemaVersion >= 4) {
+            CompoundTag roleTag = root.getCompound(TAG_UNIT_ROLES);
+            int roleCount = checkedCount(roleTag, TAG_UNIT_ROLES, unitCount);
+            int[] roleUnitRows = requiredIntArray(roleTag, "UnitRows", roleCount, TAG_UNIT_ROLES);
+            int[] roleRoleTokens = requiredIntArray(roleTag, "RoleTokens", roleCount, TAG_UNIT_ROLES);
+            int[] roleRankTokens = requiredIntArray(roleTag, "RankTokens", roleCount, TAG_UNIT_ROLES);
+            int[] roleLoadoutTokens = requiredIntArray(roleTag, "LoadoutTokens", roleCount, TAG_UNIT_ROLES);
+            byte[] roleTroopClasses;
+            byte[] roleUnpaidCycles;
+            if (schemaVersion >= 6) {
+                roleTroopClasses = requiredByteArray(roleTag, "TroopClasses", roleCount, TAG_UNIT_ROLES);
+                roleUnpaidCycles = requiredByteArray(roleTag, "UnpaidCycles", roleCount, TAG_UNIT_ROLES);
+            } else {
+                roleTroopClasses = new byte[roleCount];
+                roleUnpaidCycles = new byte[roleCount];
+                for (int roleRow = 0; roleRow < roleCount; roleRow++) {
+                    roleTroopClasses[roleRow] = PackedUnitRoleState.TROOP_CLASS_LEVY;
+                }
+            }
+            byte[] roleFlags = requiredByteArray(roleTag, "Flags", roleCount, TAG_UNIT_ROLES);
+            byte[] roleRowSeen = new byte[unitCount];
+            for (int roleRow = 0; roleRow < roleCount; roleRow++) {
+                int unitRow = roleUnitRows[roleRow];
+                if (unitRow < 0 || unitRow >= restoredUnitHandles.length) {
+                    throw new IllegalArgumentException("Persisted UnitRoles has invalid unit row " + unitRow);
+                }
+                if (roleRowSeen[unitRow] != 0) {
+                    throw new IllegalArgumentException("Duplicate persisted unit role row " + unitRow);
+                }
+                roleRowSeen[unitRow] = 1;
+                int unitHandle = restoredUnitHandles[unitRow];
+                unitRoles.restoreRow(
+                        unitHandle,
+                        roleRoleTokens[roleRow],
+                        roleRankTokens[roleRow],
+                        roleLoadoutTokens[roleRow],
+                        roleTroopClasses[roleRow],
+                        Byte.toUnsignedInt(roleUnpaidCycles[roleRow]),
+                        roleFlags[roleRow]);
+            }
+            unitRoles.restoreRevision(roleTag.getLong("Revision"));
         }
 
         CompoundTag commandTag = root.getCompound(TAG_COMMANDS);
@@ -534,7 +753,10 @@ final class ArmyNbtCodec {
                 armyRevision,
                 commands,
                 logistics,
-                settlementEconomy);
+                settlementEconomy,
+                garrisons,
+                unitRoles,
+                armySupplies);
     }
 
     private static void requireDimensionId(StableDimensionTable dimensions, int dimensionId, String owner) {
@@ -613,7 +835,10 @@ final class ArmyNbtCodec {
             long armyRevision,
             PackedCommandState commands,
             PackedLogisticsState logistics,
-            PackedSettlementEconomyState settlementEconomy) {
+            PackedSettlementEconomyState settlementEconomy,
+            PackedGarrisonState garrisons,
+            PackedUnitRoleState unitRoles,
+            PackedArmySupplyState armySupplies) {
     }
 
     /** Small primitive open-addressed table used only while serializing an ECS snapshot. */

@@ -7,7 +7,15 @@ public enum StrategicArmyOrder {
     RALLY(2, true),
     LOGISTICS(3, true),
     /** Physical entity combat at the selected settlement or field position. */
-    ATTACK(4, true);
+    ATTACK(4, true),
+    /** Persistent defensive service around a real Millenaire settlement muster post. */
+    GARRISON(5, true),
+    /** Physical perimeter assault; strategic siege ownership remains Simulation-owned. */
+    SIEGE(6, true),
+    /** Retained escort of the army controller's current loaded player entity. */
+    FOLLOW(7, false),
+    /** Persistent defensive service around an arbitrary selected field position. */
+    GUARD(8, true);
 
     private final int code;
     private final boolean requiresTarget;
@@ -32,6 +40,10 @@ public enum StrategicArmyOrder {
             case 2 -> "rally";
             case 3 -> "logistics";
             case 4 -> "attack";
+            case 5 -> "garrison";
+            case 6 -> "siege";
+            case 7 -> "follow";
+            case 8 -> "guard";
             default -> "unknown(" + code + ')';
         };
     }

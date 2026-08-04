@@ -2,6 +2,7 @@ package ru.kaiserroman.millenairearmies.integration.millenaire;
 
 import java.util.Objects;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.persistence.PackedGarrisonState;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 import ru.kaiserroman.millenairearmies.persistence.PackedCommandState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
@@ -22,6 +23,7 @@ final class RecruitmentRoster {
     private final PackedArmyControllers controllers;
     private final PackedCommandState commands;
     private final PackedLogisticsState logistics;
+    private final PackedGarrisonState garrisons;
     private final int maximumUnitsPerArmy;
     private final ArmyCommandService.DirtyMarker dirtyMarker;
     private RecruitmentUnitReleaseListener releaseListener;
@@ -32,6 +34,7 @@ final class RecruitmentRoster {
             PackedArmyControllers controllers,
             PackedCommandState commands,
             PackedLogisticsState logistics,
+            PackedGarrisonState garrisons,
             int maximumUnitsPerArmy,
             ArmyCommandService.DirtyMarker dirtyMarker,
             RecruitmentUnitReleaseListener releaseListener) {
@@ -40,6 +43,7 @@ final class RecruitmentRoster {
         this.controllers = Objects.requireNonNull(controllers, "controllers");
         this.commands = Objects.requireNonNull(commands, "commands");
         this.logistics = Objects.requireNonNull(logistics, "logistics");
+        this.garrisons = Objects.requireNonNull(garrisons, "garrisons");
         if (maximumUnitsPerArmy <= 0) {
             throw new IllegalArgumentException("Recruitment capacities must be positive");
         }
@@ -105,6 +109,24 @@ final class RecruitmentRoster {
         return 1L;
     }
 
+    /** Removes a physically dead fighter without requiring a client/controller intent. */
+    boolean releaseCasualty(long villagerUuidMost, long villagerUuidLeast) {
+        int unitHandle = memberships.unitHandleForUuid(villagerUuidMost, villagerUuidLeast);
+        if (unitHandle == 0) {
+            return false;
+        }
+        if (!ecs.isUnitAlive(unitHandle)) {
+            memberships.unbindUnit(unitHandle);
+            dirtyMarker.markDirty();
+            return true;
+        }
+        releaseListener.releasing(unitHandle, villagerUuidMost, villagerUuidLeast);
+        memberships.unbindUnit(unitHandle);
+        ecs.removeUnit(unitHandle);
+        dirtyMarker.markDirty();
+        return true;
+    }
+
     /** Returns released unit count + 1 so an empty-army disband is still a positive success. */
     long disband(ArmyCommandAuthority authority, int armyHandle) {
         long authorityFailure = authorityFailure(authority, armyHandle);
@@ -156,6 +178,7 @@ final class RecruitmentRoster {
         } while (removedAnonymous);
 
         controllers.remove(armyHandle);
+        garrisons.removeArmy(armyHandle);
         for (int commandRow = commands.size() - 1; commandRow >= 0; commandRow--) {
             if (commands.armyHandleAt(commandRow) == armyHandle) {
                 commands.removeAt(commandRow);

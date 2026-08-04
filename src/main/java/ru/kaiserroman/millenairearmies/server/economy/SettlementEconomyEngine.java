@@ -381,6 +381,63 @@ public final class SettlementEconomyEngine
         throw new IllegalStateException("No settlement can receive a compensating supply credit");
     }
 
+    /**
+     * Atomically debits one bound settlement for coarse garrison upkeep while preserving every
+     * configured local reserve. No faction-wide fallback is permitted: a remote settlement cannot
+     * silently feed a garrison whose own village stores are empty.
+     */
+    public boolean tryConsumeGarrisonUpkeep(
+            long villageMost, long villageLeast, int foodAmount, int arrowAmount) {
+        requireOwnerThread();
+        if (foodAmount < 0 || arrowAmount < 0 || foodAmount == 0 && arrowAmount == 0) {
+            return false;
+        }
+        int row = state.findSettlement(villageMost, villageLeast);
+        if (row < 0 || !state.activeAt(row) || !projectionReady) {
+            return false;
+        }
+        if (!canDebitAboveReserve(row, FOOD, foodAmount)
+                || !canDebitAboveReserve(row, ARROWS, arrowAmount)) {
+            return false;
+        }
+        if (foodAmount > 0 && !state.tryDebit(row, FOOD, foodAmount)) {
+            throw new IllegalStateException("Garrison food preflight/commit mismatch");
+        }
+        if (arrowAmount > 0 && !state.tryDebit(row, ARROWS, arrowAmount)) {
+            if (foodAmount > 0) {
+                state.credit(row, FOOD, foodAmount);
+            }
+            throw new IllegalStateException("Garrison arrow preflight/commit mismatch");
+        }
+        dirtyMarker.run();
+        return true;
+    }
+
+    /** Reserve-relative readiness for one exact settlement; missing/unready rows fail closed. */
+    public int settlementSupplyPercent(long villageMost, long villageLeast) {
+        requireOwnerThread();
+        int row = state.findSettlement(villageMost, villageLeast);
+        if (row < 0 || !state.activeAt(row) || !projectionReady) {
+            return 0;
+        }
+        long reserve = 0L;
+        long surplus = 0L;
+        for (int commodity = 0; commodity < PackedSettlementEconomyState.COMMODITY_COUNT; commodity++) {
+            reserve += state.reserveAt(row, commodity);
+            surplus += state.surplusAt(row, commodity);
+        }
+        if (reserve == 0L || surplus >= reserve) {
+            return 100;
+        }
+        return (int) (surplus * 100L / reserve);
+    }
+
+    private boolean canDebitAboveReserve(int row, int commodity, int amount) {
+        return amount == 0
+                || amount > 0
+                        && (long) state.stockAt(row, commodity) - amount >= state.reserveAt(row, commodity);
+    }
+
     @Override
     public boolean tryConsumeRecruitmentKits(long villageMost, long villageLeast, int count) {
         requireOwnerThread();
@@ -414,6 +471,12 @@ public final class SettlementEconomyEngine
             state.credit(row, commodity, RECRUITMENT_COST[commodity] * count);
         }
         dirtyMarker.run();
+    }
+
+    public boolean hasActiveSettlement(long villageMost, long villageLeast) {
+        requireOwnerThread();
+        int row = state.findSettlement(villageMost, villageLeast);
+        return row >= 0 && state.activeAt(row);
     }
 
     public int stock(long villageMost, long villageLeast, int commodity) {

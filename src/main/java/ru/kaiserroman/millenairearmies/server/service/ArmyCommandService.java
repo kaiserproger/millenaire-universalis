@@ -6,6 +6,7 @@ import net.minecraft.server.MinecraftServer;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.model.ArmyFormation;
+import ru.kaiserroman.millenairearmies.model.ArmyTacticalState;
 import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
 
@@ -280,6 +281,40 @@ public final class ArmyCommandService {
         }
         int state = ecs.armyState(armyHandle);
         int updated = formation.applyToState(state);
+        if (updated != state) {
+            ecs.armyState(armyHandle, updated);
+            dirtyMarker.markDirty();
+            orderCommitListener.committed(
+                    armyHandle,
+                    ecs.armyOrder(armyHandle),
+                    ecs.armyTargetDimension(armyHandle),
+                    ecs.armyPackedTargetPos(armyHandle));
+        }
+        return SUCCESS;
+    }
+
+    /** Updates one persisted tactical policy bit and invalidates retained execution. */
+    public long setTacticalFlag(
+            ArmyCommandAuthority authority, int armyHandle, int tacticalFlag, boolean enabled) {
+        if (server == null) {
+            return NOT_RUNNING;
+        }
+        requireServerThread();
+        Objects.requireNonNull(authority, "authority");
+        if (!ecs.isArmyAlive(armyHandle)) {
+            return ARMY_NOT_FOUND;
+        }
+        if (!canControl(authority, armyHandle)) {
+            return PERMISSION_DENIED;
+        }
+        if ((tacticalFlag & ~ArmyTacticalState.KNOWN_FLAGS) != 0
+                || Integer.bitCount(tacticalFlag) != 1) {
+            return INVALID_ORDER;
+        }
+        int state = ecs.armyState(armyHandle);
+        int updated = tacticalFlag == ArmyTacticalState.SHIELD_WALL
+                ? ArmyTacticalState.setShieldWall(state, enabled)
+                : ArmyTacticalState.setFireAtWill(state, enabled);
         if (updated != state) {
             ecs.armyState(armyHandle, updated);
             dirtyMarker.markDirty();

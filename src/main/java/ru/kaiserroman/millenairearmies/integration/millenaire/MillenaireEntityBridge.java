@@ -1,6 +1,7 @@
 package ru.kaiserroman.millenairearmies.integration.millenaire;
 
 import java.util.Arrays;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import org.millenaire.entity.MillVillager;
 import org.millenaire.village.Village;
@@ -51,6 +52,34 @@ public final class MillenaireEntityBridge {
             unresolved++;
         }
         return village != null;
+    }
+
+    /**
+     * Discovers already-loaded villagers whose join event happened before this service started.
+     * Existing runtime instances are skipped, so the periodic lifecycle call is linear rather than
+     * repeatedly rebuilding dense UUID state.
+     */
+    public int discoverLoaded(MinecraftServer server, MillenaireVillageIndex index) {
+        if (server == null || index == null) {
+            throw new NullPointerException("server/index");
+        }
+        int changes = 0;
+        for (ServerLevel level : server.getAllLevels()) {
+            for (var entity : level.getAllEntities()) {
+                if (!(entity instanceof MillVillager villager) || villager.isRemoved()) {
+                    continue;
+                }
+                int existing = indexOfUuid(
+                        villager.getUUID().getMostSignificantBits(),
+                        villager.getUUID().getLeastSignificantBits());
+                if (existing >= 0 && villagers[existing] == villager) {
+                    continue;
+                }
+                onJoin(villager, level, index);
+                changes++;
+            }
+        }
+        return changes;
     }
 
     public boolean onLeave(MillVillager villager) {
@@ -133,15 +162,11 @@ public final class MillenaireEntityBridge {
                     || candidate.isRemoved()
                     || !candidate.isAlive()
                     || candidate.level() != source.level()
-                    || candidate.isBaby()
-                    || candidate.isHired()) {
+                    || candidate.isBaby()) {
                 continue;
             }
             Village village = villages[slot];
             int targetFaction = factions.factionForVillage(village);
-            if (!factions.isHostile(sourceFaction, targetFaction)) {
-                continue;
-            }
             double objectiveDx = candidate.getX() - objectiveX;
             double objectiveDz = candidate.getZ() - objectiveZ;
             double objectiveDistanceSq = objectiveDx * objectiveDx + objectiveDz * objectiveDz;
@@ -174,6 +199,17 @@ public final class MillenaireEntityBridge {
 
     public int unresolvedCount() {
         return unresolved;
+    }
+
+    /** Visits the current dense loaded projection without allocating wrappers or collections. */
+    public void visitLoaded(LoadedVisitor visitor) {
+        if (visitor == null) throw new NullPointerException("visitor");
+        for (int slot = 0; slot < size; slot++) {
+            MillVillager villager = villagers[slot];
+            if (villager != null && !villager.isRemoved()) {
+                visitor.accept(villager, villages[slot]);
+            }
+        }
     }
 
     public void clear() {
@@ -344,6 +380,11 @@ public final class MillenaireEntityBridge {
         value *= 0xff51afd7ed558ccdL;
         value ^= value >>> 33;
         return (int) (value ^ value >>> 32);
+    }
+
+    @FunctionalInterface
+    public interface LoadedVisitor {
+        void accept(MillVillager villager, Village village);
     }
 
     @FunctionalInterface

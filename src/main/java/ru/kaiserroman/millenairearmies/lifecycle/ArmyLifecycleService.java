@@ -3,27 +3,55 @@ package ru.kaiserroman.millenairearmies.lifecycle;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import org.millenaire.entity.MillVillager;
 import org.slf4j.Logger;
+import ru.kaiserroman.millenaire.realm.RealmMilitaryPolicy;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.FeudalLeaderProjectionService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireDynamicTradeService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireInventorySupplyBridge;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenairePhysicalProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRecruitmentService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireSettlementEconomyBridge;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireVillageIndex;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireWorldMutationService;
+import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireWorldSimulationBridge;
+import ru.kaiserroman.millenairearmies.integration.millenaire.SimulationBattleImpactAdapter;
+import ru.kaiserroman.millenairearmies.integration.millenaire.SimulationTradePricePolicy;
 import ru.kaiserroman.millenairearmies.network.ServerArmyNetworkService;
 import ru.kaiserroman.millenairearmies.network.ServerIntentRouter;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
+import ru.kaiserroman.millenairearmies.persistence.PlayerRealmSavedData;
+import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
+import ru.kaiserroman.millenairearmies.persistence.RealmSavedData;
+import ru.kaiserroman.millenairearmies.persistence.SimulationSavedData;
 import ru.kaiserroman.millenairearmies.server.diplomacy.DiplomacyIntegration;
+import ru.kaiserroman.millenairearmies.server.economy.ArmyUpkeepService;
 import ru.kaiserroman.millenairearmies.server.economy.SettlementEconomyEngine;
 import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
 import ru.kaiserroman.millenairearmies.server.execution.OrderExecutionPolicy;
+import ru.kaiserroman.millenairearmies.server.execution.PhysicalBattleEventLog;
+import ru.kaiserroman.millenairearmies.server.garrison.GarrisonService;
+import ru.kaiserroman.millenairearmies.server.integration.ArmyRealmIdentityResolver;
+import ru.kaiserroman.millenairearmies.server.integration.CanonicalArmyRealmIdentityResolver;
+import ru.kaiserroman.millenairearmies.server.integration.RealmMilitaryAdapter;
 import ru.kaiserroman.millenairearmies.server.logistics.StrategicLogisticsEngine;
 import ru.kaiserroman.millenairearmies.server.logistics.StrategicSupplyPublisher;
+import ru.kaiserroman.millenairearmies.server.realm.AutonomousRealmLifecycleService;
+import ru.kaiserroman.millenairearmies.server.realm.CanonicalRealmDiplomacyService;
+import ru.kaiserroman.millenairearmies.server.realm.LegacyRealmMirrorService;
+import ru.kaiserroman.millenairearmies.server.realm.RealmAdministrationService;
+import ru.kaiserroman.millenairearmies.server.realm.FeudalLevyService;
+import ru.kaiserroman.millenairearmies.server.realm.RealmEvolutionService;
+import ru.kaiserroman.millenairearmies.server.realm.RealmHistoricalService;
+import ru.kaiserroman.millenairearmies.server.realm.RealmStateDecisionService;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
+import ru.kaiserroman.millenairearmies.server.supply.ArmySupplyChestService;
 import ru.kaiserroman.millenairearmies.server.telemetry.StrategicPhaseTelemetry;
 import ru.kaiserroman.millenairearmies.server.unit.UnitDescriptorCatalog;
 import ru.kaiserroman.millenairearmies.server.unit.UnitRoleService;
@@ -61,8 +89,31 @@ public final class ArmyLifecycleService {
     private MillenaireInventorySupplyBridge inventorySupplyBridge;
     private StrategicSupplyPublisher supplyPublisher;
     private SettlementEconomyEngine settlementEconomy;
+    private GarrisonService garrisonService;
+    private RealmSavedData realmData;
+    private SimulationSavedData simulationData;
+    private MillenaireDynamicTradeService dynamicTradeService;
+    private MillenairePhysicalProjectionService physicalProjectionService;
+    private RealmAdministrationService realmAdministrationService;
+    private AutonomousRealmLifecycleService autonomousRealmLifecycleService;
+    private RealmEvolutionService realmEvolutionService;
+    private RealmHistoricalService realmHistoricalService;
+    private RealmStateDecisionService realmStateDecisionService;
+    private CanonicalRealmDiplomacyService canonicalRealmDiplomacyService;
+    private CanonicalArmyRealmIdentityResolver canonicalRealmIdentityResolver;
+    private PlayerRealmSavedData legacyPlayerRealms;
+    private RealmGovernanceSavedData legacyRealmGovernance;
+    private LegacyRealmMirrorService legacyRealmMirror;
+    private RealmMilitaryAdapter realmMilitaryAdapter;
+    private SimulationBattleImpactAdapter simulationBattleImpactAdapter;
     private MillenaireSettlementEconomyBridge settlementEconomyBridge;
+    private MillenaireWorldMutationService worldMutationService;
+    private MillenaireWorldSimulationBridge worldSimulationBridge;
     private UnitRoleService unitRoleService;
+    private FeudalLeaderProjectionService feudalLeaderProjectionService;
+    private FeudalLevyService feudalLevyService;
+    private ArmyUpkeepService armyUpkeepService;
+    private ArmySupplyChestService armySupplyChestService;
     private int ticksUntilReconcile;
     private boolean reconcileRequested;
     private long completedEconomyRevision;
@@ -106,6 +157,163 @@ public final class ArmyLifecycleService {
                 StrategicPhaseTelemetry.FACTION_PROJECTION,
                 System.nanoTime() - phaseStart,
                 factionProjection.size());
+        realmData = RealmSavedData.get(startingServer);
+        legacyPlayerRealms = PlayerRealmSavedData.get(startingServer);
+        legacyRealmGovernance = RealmGovernanceSavedData.get(startingServer);
+        legacyRealmMirror = new LegacyRealmMirrorService(realmData);
+        legacyRealmMirror.reconcile(legacyPlayerRealms, legacyRealmGovernance);
+        feudalLeaderProjectionService = new FeudalLeaderProjectionService();
+        feudalLeaderProjectionService.start(
+                startingServer,
+                entityBridge,
+                realmData,
+                legacyRealmGovernance,
+                savedData);
+        LOGGER.info(
+                "Canonical Realm registry ready: realms={}, members={}, subjects={}, legacy_profiles={}",
+                realmData.registry().realmCount(),
+                realmData.registry().memberCount(),
+                realmData.keys().size(),
+                realmData.metadataSize());
+        if (ArmiesConfig.WORLD_SIMULATION_ENABLED) {
+            simulationData = SimulationSavedData.get(startingServer);
+            worldSimulationBridge = new MillenaireWorldSimulationBridge(
+                    villageIndex,
+                    simulationData,
+                    realmData,
+                    ArmiesConfig.WORLD_SIMULATION_SCAN_ROWS_PER_TICK,
+                    ArmiesConfig.WORLD_SIMULATION_REGION_SIZE_BLOCKS);
+            if (ArmiesConfig.WORLD_MUTATION_ENABLED) {
+                worldMutationService = new MillenaireWorldMutationService(
+                        villageIndex,
+                        simulationData,
+                        realmData,
+                        () -> reconcileRequested = true,
+                        ArmiesConfig.WORLD_MUTATION_FOUNDING_ENABLED,
+                        ArmiesConfig.WORLD_MUTATION_ABANDONMENT_ENABLED,
+                        ArmiesConfig.WORLD_MUTATION_REFUGEES_PER_EVENT,
+                        ArmiesConfig.WORLD_MUTATION_EVENTS_PER_TICK,
+                        ArmiesConfig.WORLD_MUTATION_SITE_ATTEMPTS,
+                        ArmiesConfig.WORLD_MUTATION_MAX_ATTEMPTS,
+                        ArmiesConfig.WORLD_MUTATION_RETRY_TICKS,
+                        ArmiesConfig.WORLD_MUTATION_MIN_FOUNDING_DISTANCE,
+                        ArmiesConfig.WORLD_MUTATION_MAX_FOUNDING_DISTANCE,
+                        ArmiesConfig.WORLD_MUTATION_MIN_VILLAGE_DISTANCE,
+                        ArmiesConfig.WORLD_MUTATION_PLAYER_SAFETY_RADIUS,
+                        ArmiesConfig.WORLD_MUTATION_FOUNDING_COMPLETION,
+                        ArmiesConfig.WORLD_SIMULATION_REGION_SIZE_BLOCKS);
+            }
+            if (ArmiesConfig.DYNAMIC_TRADE_PRICES_ENABLED) {
+                dynamicTradeService = new MillenaireDynamicTradeService(
+                        simulationData,
+                        new SimulationTradePricePolicy(
+                                ArmiesConfig.DYNAMIC_TRADE_MIN_MULTIPLIER_PERMILLE,
+                                ArmiesConfig.DYNAMIC_TRADE_MAX_MULTIPLIER_PERMILLE,
+                                ArmiesConfig.DYNAMIC_TRADE_MAX_PRICE));
+            }
+            if (ArmiesConfig.WORLD_PHYSICAL_PROJECTION_ENABLED) {
+                physicalProjectionService = new MillenairePhysicalProjectionService(
+                        villageIndex,
+                        simulationData,
+                        realmData,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_INTERVAL_TICKS,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_VILLAGES_PER_TICK,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_STOCK_CAP,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_ITEMS_PER_SWEEP,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_CATALOG_ITEMS,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_RELATIONS_PER_VILLAGE,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_DECLINE_PAUSE_YEARS,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_RUIN_PAUSE_YEARS,
+                        ArmiesConfig.HISTORICAL_YEAR_TICKS,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS,
+                        ArmiesConfig.WORLD_PHYSICAL_PROJECTION_PLAYER_VILLAGES);
+            }
+            if (ArmiesConfig.AUTONOMOUS_REALMS_ENABLED) {
+                autonomousRealmLifecycleService = new AutonomousRealmLifecycleService(
+                        realmData,
+                        simulationData,
+                        RealmSavedData.MAX_REALMS,
+                        ArmiesConfig.MAX_SETTLEMENTS,
+                        ArmiesConfig.AUTONOMOUS_REALM_INTERVAL_CYCLES,
+                        ArmiesConfig.AUTONOMOUS_REALM_TRANSITIONS_PER_TICK,
+                        ArmiesConfig.REALM_CITY_STATE_MINIMUM_POPULATION,
+                        ArmiesConfig.REALM_CITY_STATE_FORMATION_YEARS,
+                        ArmiesConfig.REALM_REGIONAL_FORMATION_YEARS,
+                        ArmiesConfig.REALM_COLLAPSE_DISSOLUTION_YEARS,
+                        ArmiesConfig.REALM_CAPITAL_LOSS_DISSOLUTION_YEARS,
+                        ArmiesConfig.REALM_SECESSION_ENABLED,
+                        ArmiesConfig.REALM_SECESSION_MINIMUM_PHASE_YEARS,
+                        ArmiesConfig.REALM_SECESSION_COOLDOWN_YEARS,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS,
+                        ArmiesConfig.HISTORICAL_YEAR_TICKS);
+            }
+            if (ArmiesConfig.REALM_EVOLUTION_ENABLED) {
+                realmEvolutionService = new RealmEvolutionService(
+                        realmData,
+                        simulationData,
+                        RealmSavedData.MAX_REALMS,
+                        ArmiesConfig.MAX_SETTLEMENTS,
+                        ArmiesConfig.REALM_EVOLUTION_INTERVAL_CYCLES,
+                        ArmiesConfig.REALM_EVOLUTION_REALMS_PER_TICK,
+                        ArmiesConfig.REALM_EVOLUTION_REFORM_STEP,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS,
+                        ArmiesConfig.HISTORICAL_YEAR_TICKS);
+            }
+            if (ArmiesConfig.REALM_HISTORICAL_ENABLED) {
+                realmHistoricalService = new RealmHistoricalService(
+                        realmData,
+                        simulationData,
+                        RealmSavedData.MAX_REALMS,
+                        ArmiesConfig.MAX_SETTLEMENTS,
+                        ArmiesConfig.REALM_HISTORICAL_REALMS_PER_TICK,
+                        ArmiesConfig.REALM_CITY_STATE_MINIMUM_POPULATION,
+                        ArmiesConfig.REALM_HISTORICAL_EVALUATION_TICKS,
+                        ArmiesConfig.HISTORICAL_YEAR_TICKS,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS);
+            }
+            if (ArmiesConfig.CANONICAL_REALM_DIPLOMACY_ENABLED) {
+                canonicalRealmDiplomacyService = new CanonicalRealmDiplomacyService(
+                        realmData,
+                        simulationData,
+                        RealmSavedData.MAX_REALMS,
+                        ArmiesConfig.MAX_SETTLEMENTS,
+                        RealmSavedData.MAX_RELATIONS,
+                        ArmiesConfig.CANONICAL_REALM_DIPLOMACY_INTERVAL_CYCLES,
+                        ArmiesConfig.CANONICAL_REALM_DIPLOMACY_RELATIONS_PER_TICK,
+                        ArmiesConfig.CANONICAL_REALM_TRUCE_CYCLES,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS);
+            }
+            if (ArmiesConfig.REALM_STATE_DECISIONS_ENABLED) {
+                realmStateDecisionService = new RealmStateDecisionService(
+                        villageIndex,
+                        realmData,
+                        simulationData,
+                        canonicalRealmDiplomacyService,
+                        RealmSavedData.MAX_REALMS,
+                        ArmiesConfig.REALM_STATE_DECISION_EVALUATION_TICKS,
+                        ArmiesConfig.REALM_STATE_DECISION_REALMS_PER_TICK,
+                        ArmiesConfig.REALM_STATE_DECISION_INTERVAL_YEARS,
+                        ArmiesConfig.REALM_STATE_DECISION_BASE_INVESTMENT,
+                        ArmiesConfig.REALM_STATE_DECISION_PROJECT_CANDIDATES,
+                        ArmiesConfig.HISTORICAL_YEAR_TICKS,
+                        ArmiesConfig.WORLD_SIMULATION_INTERVAL_TICKS);
+            }
+            LOGGER.info(
+                    "Millenaire Simulation enabled: demography, productivity, markets, dynamic trade={}, world mutation={}, autonomous Realms={}, Realm evolution={}, historical eras={} and canonical diplomacy={}",
+                    dynamicTradeService == null ? "disabled" : "enabled",
+                    worldMutationService == null ? "disabled (opt-in)" : "enabled",
+                    autonomousRealmLifecycleService == null ? "disabled" : "enabled",
+                    realmEvolutionService == null ? "disabled" : "enabled",
+                    realmHistoricalService == null ? "disabled" : "enabled",
+                    canonicalRealmDiplomacyService == null ? "disabled" : "enabled");
+        } else {
+            LOGGER.warn("Millenaire Simulation is disabled by config; physical village indexing remains available to Armies only");
+        }
+        realmAdministrationService = new RealmAdministrationService(
+                realmData,
+                simulationData,
+                legacyPlayerRealms,
+                legacyRealmGovernance);
         if (ArmiesConfig.LOGISTICS_INVENTORY_PROJECTION_ENABLED) {
             settlementEconomy = new SettlementEconomyEngine(
                     savedData.settlementEconomy(),
@@ -155,11 +363,22 @@ public final class ArmyLifecycleService {
                 savedData.memberships(),
                 savedData.commands(),
                 savedData.logistics(),
+                savedData.garrisons(),
                 savedData::markArmyChanged);
         recruitmentService.installFactionPolicy(factionProjection);
         if (settlementEconomy != null) {
             recruitmentService.installSupplyPolicy(settlementEconomy);
         }
+        garrisonService = new GarrisonService();
+        garrisonService.start(
+                startingServer,
+                savedData,
+                villageIndex,
+                factionProjection,
+                commandService,
+                settlementEconomy);
+        armySupplyChestService = new ArmySupplyChestService();
+        armySupplyChestService.start(startingServer, savedData, entityBridge);
         if (OrderExecutionPolicy.shouldStart(ArmiesConfig.ORDER_EXECUTION_ENABLED)) {
             orderExecution = new ArmyOrderExecutionBridge();
             orderExecution.start(
@@ -170,30 +389,80 @@ public final class ArmyLifecycleService {
                     entityBridge,
                     factionProjection,
                     commandService,
-                    savedData::markArmyChanged);
-            recruitmentService.installReleaseListener(orderExecution::releaseUnit);
+                    savedData.garrisons(),
+                    savedData::markArmyChanged,
+                    armySupplyChestService);
+            if (worldSimulationBridge != null) {
+                simulationBattleImpactAdapter = new SimulationBattleImpactAdapter(
+                        orderExecution.battleEvents(),
+                        savedData.dimensions(),
+                        worldSimulationBridge);
+            }
         }
         diplomacy.start(startingServer, savedData);
         unitRoleService = new UnitRoleService(
                 savedData.memberships(),
                 entityBridge,
                 UnitDescriptorCatalog.INSTANCE,
+                savedData.unitRoles(),
                 savedData.memberships().size());
+        recruitmentService.installUnitRoleState(savedData.unitRoles());
+        recruitmentService.installReleaseListener((unitHandle, uuidMost, uuidLeast) -> {
+            if (orderExecution != null) orderExecution.releaseUnit(unitHandle, uuidMost, uuidLeast);
+            if (savedData.unitRoles().remove(unitHandle)) savedData.markArmyChanged();
+        });
+        armyUpkeepService = new ArmyUpkeepService();
+        armyUpkeepService.start(startingServer, savedData, recruitmentService);
+        feudalLevyService = new FeudalLevyService();
+        feudalLevyService.start(
+                startingServer,
+                villageIndex,
+                factionProjection,
+                recruitmentService,
+                commandService,
+                realmData,
+                legacyRealmGovernance,
+                simulationData,
+                () -> reconcileRequested = true);
         networkService = new ServerArmyNetworkService(
                 savedData,
                 commandService,
+                unitRoleService,
                 factionProjection,
                 villageIndex,
                 recruitmentService,
                 orderExecution,
-                settlementEconomy);
+                settlementEconomy,
+                garrisonService,
+                realmData,
+                simulationData,
+                realmAdministrationService);
         ServerIntentRouter.install(networkService);
         phaseStart = System.nanoTime();
-        int entityChanges = entityBridge.reconcile(villageIndex);
+        int entityChanges = entityBridge.discoverLoaded(startingServer, villageIndex);
+        entityChanges += entityBridge.reconcile(villageIndex);
         phaseTelemetry.record(
                 StrategicPhaseTelemetry.ENTITY_RECONCILE,
                 System.nanoTime() - phaseStart,
                 entityBridge.size());
+        if (orderExecution != null && canonicalRealmDiplomacyService != null) {
+            canonicalRealmIdentityResolver = new CanonicalArmyRealmIdentityResolver(
+                    savedData.ecs(),
+                    savedData.controllers(),
+                    savedData.memberships(),
+                    savedData.dimensions(),
+                    entityBridge,
+                    villageIndex,
+                    realmData,
+                    ArmiesConfig.CANONICAL_REALM_OBJECTIVE_RADIUS);
+            canonicalRealmIdentityResolver.reconcile();
+            installRealmMilitaryPolicy(
+                    canonicalRealmDiplomacyService,
+                    canonicalRealmIdentityResolver);
+            LOGGER.info(
+                    "Canonical Realm military policy installed: unresolved_armies={}",
+                    canonicalRealmIdentityResolver.unresolvedArmyCount());
+        }
         reconcileRequested = false;
         LOGGER.info(
                 "Millenaire strategy indexed {} villages/{} factions and bound {}/{} loaded villagers (initial changes: villages={}, factions={}, entities={})",
@@ -213,6 +482,18 @@ public final class ArmyLifecycleService {
         }
         // This intentionally has no player-count gate: strategic village supply remains alive.
         long gameTime = tickingServer.overworld().getGameTime();
+        if (worldSimulationBridge != null) {
+            worldSimulationBridge.tick(gameTime);
+        }
+        if (worldMutationService != null) {
+            worldMutationService.tick(gameTime);
+        }
+        if (physicalProjectionService != null) {
+            physicalProjectionService.tick(gameTime);
+        }
+        if (feudalLeaderProjectionService != null) {
+            feudalLeaderProjectionService.tick(gameTime);
+        }
         if (settlementEconomyBridge != null) {
             settlementEconomyBridge.tick(gameTime);
             long completed = settlementEconomyBridge.completedRevisionCount();
@@ -239,6 +520,16 @@ public final class ArmyLifecycleService {
         phaseStart = System.nanoTime();
         diplomacy.tick(tickingServer);
         phaseTelemetry.record(StrategicPhaseTelemetry.DIPLOMACY, System.nanoTime() - phaseStart, 0);
+        recruitmentService.tick(tickingServer);
+        if (armyUpkeepService != null) {
+            armyUpkeepService.tick(tickingServer);
+        }
+        if (garrisonService != null) {
+            garrisonService.tick(tickingServer);
+        }
+        if (armySupplyChestService != null) {
+            armySupplyChestService.tick(tickingServer);
+        }
         if (orderExecution != null) {
             phaseStart = System.nanoTime();
             orderExecution.tick(tickingServer);
@@ -246,6 +537,27 @@ public final class ArmyLifecycleService {
                     StrategicPhaseTelemetry.ORDER_EXECUTION,
                     System.nanoTime() - phaseStart,
                     entityBridge.size());
+        }
+        if (realmMilitaryAdapter != null) {
+            realmMilitaryAdapter.tick(ArmiesConfig.REALM_BATTLE_EVENTS_PER_TICK);
+        }
+        if (simulationBattleImpactAdapter != null) {
+            simulationBattleImpactAdapter.tick(ArmiesConfig.WORLD_SIMULATION_BATTLE_EVENTS_PER_TICK);
+        }
+        if (realmEvolutionService != null) {
+            realmEvolutionService.tick(gameTime);
+        }
+        if (realmHistoricalService != null) {
+            realmHistoricalService.tick(gameTime);
+        }
+        if (realmStateDecisionService != null) {
+            realmStateDecisionService.tick(gameTime);
+        }
+        if (autonomousRealmLifecycleService != null) {
+            autonomousRealmLifecycleService.tick(gameTime);
+        }
+        if (canonicalRealmDiplomacyService != null) {
+            canonicalRealmDiplomacyService.tick(gameTime);
         }
         if (!reconcileRequested && --ticksUntilReconcile > 0) {
             return;
@@ -266,33 +578,54 @@ public final class ArmyLifecycleService {
                 StrategicPhaseTelemetry.FACTION_PROJECTION,
                 System.nanoTime() - phaseStart,
                 factionProjection.size());
+        int realmChanges = legacyRealmMirror == null
+                ? 0
+                : legacyRealmMirror.reconcile(legacyPlayerRealms, legacyRealmGovernance);
         phaseStart = System.nanoTime();
-        int entityChanges = entityBridge.reconcile(villageIndex);
+        int entityChanges = entityBridge.discoverLoaded(tickingServer, villageIndex);
+        entityChanges += entityBridge.reconcile(villageIndex);
         phaseTelemetry.record(
                 StrategicPhaseTelemetry.ENTITY_RECONCILE,
                 System.nanoTime() - phaseStart,
                 entityBridge.size());
+        int armyRealmChanges = canonicalRealmIdentityResolver == null
+                ? 0
+                : canonicalRealmIdentityResolver.reconcile();
         if (supplyPublisher != null) {
             supplyPublisher.requestReconcileAll();
         }
         if (settlementEconomyBridge != null) {
             settlementEconomyBridge.requestReconcile();
         }
+        if (worldSimulationBridge != null) {
+            worldSimulationBridge.requestReconcile();
+        }
+        if (physicalProjectionService != null) {
+            physicalProjectionService.requestReconcile();
+        }
+        if (garrisonService != null) {
+            garrisonService.reconcileAll();
+        }
         ticksUntilReconcile = RECONCILE_INTERVAL_TICKS;
         reconcileRequested = false;
 
         if (villageChanges != 0
                 || factionChanges != 0
+                || realmChanges != 0
+                || armyRealmChanges != 0
                 || entityChanges != 0
                 || oldVillageCount != villageIndex.size()
                 || oldLoadedCount != entityBridge.size()
                 || oldUnresolvedCount != entityBridge.unresolvedCount()) {
             LOGGER.debug(
-                    "Millenaire strategy reconciled: villages={} (changes={}), factions={} (changes={}), loaded villagers={} (unresolved={}, changes={})",
+                    "Millenaire strategy reconciled: villages={} (changes={}), factions={} (changes={}), realms={} (changes={}), army_realm_changes={}, loaded villagers={} (unresolved={}, changes={})",
                     villageIndex.size(),
                     villageChanges,
                     factionProjection.size(),
                     factionChanges,
+                    realmData == null ? 0 : realmData.registry().realmCount(),
+                    realmChanges,
+                    armyRealmChanges,
                     entityBridge.size(),
                     entityBridge.unresolvedCount(),
                     entityChanges);
@@ -322,6 +655,16 @@ public final class ArmyLifecycleService {
         }
     }
 
+    public void entityDied(Entity entity, Entity source) {
+        if (state != State.RUNNING || !(entity instanceof MillVillager villager)) {
+            return;
+        }
+        if (orderExecution != null) {
+            orderExecution.entityDied(villager, source);
+        }
+        recruitmentService.casualty(villager);
+    }
+
     public boolean stop() {
         if (state != State.RUNNING) {
             return false;
@@ -329,12 +672,98 @@ public final class ArmyLifecycleService {
         state = State.STOPPED;
         ServerIntentRouter.uninstall(networkService);
         networkService = null;
+        if (realmMilitaryAdapter != null) {
+            realmMilitaryAdapter.tick(ArmiesConfig.BATTLE_EVENT_CAPACITY);
+            realmMilitaryAdapter.clear();
+            realmMilitaryAdapter = null;
+        }
+        if (simulationBattleImpactAdapter != null) {
+            simulationBattleImpactAdapter.tick(ArmiesConfig.BATTLE_EVENT_CAPACITY);
+            simulationBattleImpactAdapter.logShutdownMetrics();
+            simulationBattleImpactAdapter = null;
+        }
         if (orderExecution != null) {
             orderExecution.stop(server);
             orderExecution = null;
         }
+        if (armySupplyChestService != null) {
+            armySupplyChestService.stop(server);
+            armySupplyChestService = null;
+        }
+        if (armyUpkeepService != null) {
+            armyUpkeepService.stop(server);
+            armyUpkeepService = null;
+        }
+        if (feudalLevyService != null) {
+            feudalLevyService.stop(server);
+            feudalLevyService = null;
+        }
         recruitmentService.stop(server);
+        if (garrisonService != null) {
+            garrisonService.stop(server);
+            garrisonService = null;
+        }
         diplomacy.stop(server);
+        if (canonicalRealmDiplomacyService != null) {
+            canonicalRealmDiplomacyService.logShutdownMetrics();
+            canonicalRealmDiplomacyService = null;
+        }
+        canonicalRealmIdentityResolver = null;
+        if (autonomousRealmLifecycleService != null) {
+            autonomousRealmLifecycleService.logShutdownMetrics();
+            autonomousRealmLifecycleService = null;
+        }
+        if (realmEvolutionService != null) {
+            realmEvolutionService.logShutdownMetrics();
+            realmEvolutionService = null;
+        }
+        if (realmHistoricalService != null) {
+            realmHistoricalService.logShutdownMetrics();
+            realmHistoricalService = null;
+        }
+        if (realmStateDecisionService != null) {
+            realmStateDecisionService.logShutdownMetrics();
+            realmStateDecisionService = null;
+        }
+        if (worldMutationService != null) {
+            worldMutationService.logShutdownMetrics();
+            worldMutationService = null;
+        }
+        if (physicalProjectionService != null) {
+            physicalProjectionService.logShutdownMetrics();
+            physicalProjectionService = null;
+        }
+        if (feudalLeaderProjectionService != null) {
+            feudalLeaderProjectionService.stop(server);
+            feudalLeaderProjectionService = null;
+        }
+        if (dynamicTradeService != null) {
+            dynamicTradeService.logShutdownMetrics();
+            dynamicTradeService = null;
+        }
+        if (worldSimulationBridge != null) {
+            worldSimulationBridge.logShutdownMetrics();
+            worldSimulationBridge = null;
+        }
+        if (realmData != null) {
+            LOGGER.info(
+                    "[BANNEROK_CANONICAL_REALM_METRICS] realms={} members={} subjects={} metadata={} mirror_reconciles={} primitive_bytes={}",
+                    realmData.registry().realmCount(),
+                    realmData.registry().memberCount(),
+                    realmData.keys().size(),
+                    realmData.metadataSize(),
+                    legacyRealmMirror == null ? 0L : legacyRealmMirror.reconcileCount(),
+                    realmData.registry().estimatedPrimitiveBytes()
+                            + realmData.institutions().estimatedPrimitiveBytes()
+                            + realmData.lifecycle().estimatedPrimitiveBytes()
+                            + realmData.diplomacy().estimatedPrimitiveBytes()
+                            + realmData.keys().estimatedPrimitiveBytes());
+        }
+        legacyRealmMirror = null;
+        legacyPlayerRealms = null;
+        legacyRealmGovernance = null;
+        simulationData = null;
+        realmData = null;
         if (settlementEconomy != null) {
             LOGGER.info(
                     "[BANNEROK_SETTLEMENT_ECONOMY_METRICS] settlements={} shipments={} created={} delivered={} rolled_back={} rejected_routes={} physical_reconciliation_shortfall={} primitive_bytes={}",
@@ -418,12 +847,84 @@ public final class ArmyLifecycleService {
         return settlementEconomy;
     }
 
+    public MillenaireWorldSimulationBridge worldSimulationBridge() {
+        return worldSimulationBridge;
+    }
+
+    public MillenaireWorldMutationService worldMutationService() {
+        return worldMutationService;
+    }
+
+    public boolean tryOpenDynamicTrade(ServerPlayer player, MillVillager villager) {
+        return state == State.RUNNING
+                && dynamicTradeService != null
+                && dynamicTradeService.tryOpen(player, villager);
+    }
+
+    public MillenaireDynamicTradeService dynamicTradeService() {
+        return dynamicTradeService;
+    }
+
+    public RealmSavedData realmData() {
+        return realmData;
+    }
+
+    public RealmEvolutionService realmEvolutionService() {
+        return realmEvolutionService;
+    }
+
+    public RealmHistoricalService realmHistoricalService() {
+        return realmHistoricalService;
+    }
+
+    public CanonicalRealmDiplomacyService canonicalRealmDiplomacyService() {
+        return canonicalRealmDiplomacyService;
+    }
+
+    public CanonicalArmyRealmIdentityResolver canonicalRealmIdentityResolver() {
+        return canonicalRealmIdentityResolver;
+    }
+
+    public GarrisonService garrisonService() {
+        return garrisonService;
+    }
+
     public UnitRoleService unitRoleService() {
         return unitRoleService;
     }
 
+    public ArmyUpkeepService armyUpkeepService() {
+        return armyUpkeepService;
+    }
+
+    public FeudalLevyService feudalLevyService() {
+        return feudalLevyService;
+    }
+
     public ArmyOrderExecutionBridge orderExecution() {
         return orderExecution;
+    }
+
+    public PhysicalBattleEventLog battleEvents() {
+        return orderExecution == null ? null : orderExecution.battleEvents();
+    }
+
+    public void installRealmMilitaryPolicy(
+            RealmMilitaryPolicy policy, ArmyRealmIdentityResolver identities) {
+        if (state != State.RUNNING || server == null || orderExecution == null) {
+            throw new IllegalStateException("Realm military policy requires active physical execution");
+        }
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Realm military policy must install on the server thread");
+        }
+        RealmMilitaryAdapter replacement = new RealmMilitaryAdapter(
+                policy,
+                identities,
+                orderExecution.battleEvents(),
+                (sourceArmy, targetArmy, sourceFaction, targetFaction) ->
+                        factionProjection.isHostile(sourceFaction, targetFaction));
+        orderExecution.installHostilityPolicy(replacement);
+        realmMilitaryAdapter = replacement;
     }
 
     public StrategicPhaseTelemetry phaseTelemetry() {

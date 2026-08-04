@@ -9,6 +9,7 @@ import org.millenaire.village.Village;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
+import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 
 /**
  * Server-thread tactical director shared by physical attack tasks.
@@ -61,6 +62,10 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
     private long[] pressureTargetLeast = new long[0];
     private int[] pressureCounts = new int[0];
 
+    private PackedArmyEcs ecs;
+    private PackedUnitMembership memberships;
+    private ArmyHostilityPolicy hostilityPolicy = ArmyHostilityPolicy.DENY_ALL;
+
     // Mutable scoring context. The coordinator is server-thread only and scans synchronously.
     private int scoringArmy;
     private byte scoringRole;
@@ -70,6 +75,15 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
     private double scoringForwardX;
     private double scoringForwardZ;
     private MillVillager scoringSource;
+
+    void start(PackedArmyEcs persistedEcs, PackedUnitMembership persistedMemberships) {
+        ecs = persistedEcs;
+        memberships = persistedMemberships;
+    }
+
+    void hostilityPolicy(ArmyHostilityPolicy replacement) {
+        hostilityPolicy = java.util.Objects.requireNonNull(replacement, "replacement");
+    }
 
     BattlePlan plan(
             int armyHandle,
@@ -126,6 +140,9 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
         out.morale = morale;
         out.phase = phase;
         out.retreat = phase == PHASE_ROUT;
+        out.targetArmy = PackedArmyEcs.NO_ARMY;
+        out.targetUnit = 0;
+        out.targetFaction = -1;
         if (out.retreat) {
             assignTarget(unitRow, null);
             out.target = null;
@@ -181,6 +198,14 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
             return out;
         }
 
+        out.targetUnit = unitFor(target);
+        out.targetArmy = out.targetUnit == 0 || !ecs.isUnitAlive(out.targetUnit)
+                ? PackedArmyEcs.NO_ARMY
+                : ecs.unitArmy(out.targetUnit);
+        out.targetFaction = out.targetArmy == PackedArmyEcs.NO_ARMY || !ecs.isArmyAlive(out.targetArmy)
+                ? -1
+                : ecs.armyFaction(out.targetArmy);
+
         double forwardX = formation.forwardX();
         double forwardZ = formation.forwardZ();
         double rightX = -forwardZ;
@@ -216,6 +241,17 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
             int targetFaction,
             double sourceDistanceSq,
             double objectiveDistanceSq) {
+        int candidateArmy = armyFor(candidate);
+        boolean targetArmyAlive = candidateArmy != PackedArmyEcs.NO_ARMY && ecs.isArmyAlive(candidateArmy);
+        boolean hostile = targetArmyAlive && hostilityPolicy.hostile(
+                scoringArmy,
+                candidateArmy,
+                ecs.armyFaction(scoringArmy),
+                ecs.armyFaction(candidateArmy));
+        if (!BattleTargetPolicy.valid(
+                scoringArmy, candidateArmy, targetArmyAlive, hostile)) {
+            return Double.POSITIVE_INFINITY;
+        }
         int pressure = pressure(scoringArmy, candidate);
         int maximumPressure = maximumPressure(candidate, scoringRole == ROLE_RANGED);
         if (pressure >= maximumPressure) {
@@ -284,6 +320,9 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
         armySize = 0;
         unitSize = 0;
         pressureSize = 0;
+        ecs = null;
+        memberships = null;
+        hostilityPolicy = ArmyHostilityPolicy.DENY_ALL;
     }
 
     static byte roleFor(
@@ -338,6 +377,20 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
                 expectedUnits);
     }
 
+    private int unitFor(MillVillager villager) {
+        if (villager == null || villager.getUUID() == null || ecs == null || memberships == null) {
+            return 0;
+        }
+        return memberships.unitHandleForUuid(
+                villager.getUUID().getMostSignificantBits(),
+                villager.getUUID().getLeastSignificantBits());
+    }
+
+    private int armyFor(MillVillager villager) {
+        int unit = unitFor(villager);
+        return unit != 0 && ecs.isUnitAlive(unit) ? ecs.unitArmy(unit) : PackedArmyEcs.NO_ARMY;
+    }
+
     private boolean validTarget(
             MillVillager source,
             MillVillager target,
@@ -358,8 +411,15 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
         if (objectiveDx * objectiveDx + objectiveDz * objectiveDz > TARGET_LEASH_SQ) {
             return false;
         }
-        Village village = entities.villageFor(target);
-        return factions.isHostile(sourceFaction, factions.factionForVillage(village));
+        int targetArmy = armyFor(target);
+        int sourceArmy = armyFor(source);
+        boolean targetArmyAlive = targetArmy != PackedArmyEcs.NO_ARMY && ecs.isArmyAlive(targetArmy);
+        boolean hostile = targetArmyAlive && hostilityPolicy.hostile(
+                sourceArmy,
+                targetArmy,
+                sourceFaction,
+                ecs.armyFaction(targetArmy));
+        return BattleTargetPolicy.valid(sourceArmy, targetArmy, targetArmyAlive, hostile);
     }
 
     private int activateArmy(int armyHandle, long revision) {
@@ -422,7 +482,7 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
         }
     }
 
-    private int assignedUnits(int armyHandle) {
+    int assignedUnits(int armyHandle) {
         int assigned = 0;
         for (int row = 0; row < unitSize; row++) {
             if (unitActive[row] && unitArmies[row] == armyHandle && unitTargets[row] != null) {
@@ -552,6 +612,9 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
 
     static final class BattlePlan {
         private MillVillager target;
+        private int targetArmy;
+        private int targetUnit;
+        private int targetFaction;
         private byte role;
         private byte phase;
         private int morale;
@@ -562,6 +625,18 @@ final class ArmyBattleCoordinator implements MillenaireEntityBridge.CombatTarget
 
         MillVillager target() {
             return target;
+        }
+
+        int targetArmy() {
+            return targetArmy;
+        }
+
+        int targetUnit() {
+            return targetUnit;
+        }
+
+        int targetFaction() {
+            return targetFaction;
         }
 
         byte role() {

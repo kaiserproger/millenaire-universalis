@@ -143,6 +143,14 @@ public interface ArmyClientMirror {
         return 0;
     }
 
+    default boolean armyShieldWall(int index) {
+        return false;
+    }
+
+    default boolean armyFireAtWill(int index) {
+        return false;
+    }
+
     default String armyOrderTarget(int index) {
         return "";
     }
@@ -154,6 +162,15 @@ public interface ArmyClientMirror {
     default String armyComposition(int index) {
         return "";
     }
+
+    default boolean armyHasGarrison(int index) { return false; }
+    default String armyGarrisonSettlement(int index) { return ""; }
+    default long armyGarrisonMusterPosition(int index) { return 0L; }
+    default int armyGarrisonRadius(int index) { return 0; }
+    default byte armyGarrisonStatusCode(int index) { return 0; }
+    default int armyGarrisonSupplyPercent(int index) { return 0; }
+    default int armyGarrisonReadinessPercent(int index) { return 0; }
+    default int armyGarrisonMoralePercent(int index) { return 0; }
 
     default int orderCount() {
         return 0;
@@ -252,6 +269,7 @@ public interface ArmyClientMirror {
     default int settlementFactionId(int index) { return -1; }
     default int settlementPopulation(int index) { return 0; }
     default int settlementAvailableRecruitCount(int index) { return 0; }
+    default boolean settlementControlled(int index) { return false; }
     default String settlementName(int index) { return ""; }
     default String settlementCulture(int index) { return ""; }
 
@@ -261,6 +279,10 @@ public interface ArmyClientMirror {
     default long recruitVillageMost(int index) { return 0L; }
     default long recruitVillageLeast(int index) { return 0L; }
     default int recruitStrength(int index) { return 0; }
+    default int recruitOptionCode(int index) { return 0; }
+    default int recruitCost(int index) { return 0; }
+    default int recruitReputation(int index) { return 0; }
+    default int recruitRequiredReputation(int index) { return 0; }
     default String recruitName(int index) { return ""; }
     default String recruitRole(int index) { return ""; }
 
@@ -282,6 +304,16 @@ public interface ArmyClientMirror {
     default int realmLeather() { return 0; }
     default int realmArrows() { return 0; }
 
+    default int realmRelationCount() { return 0; }
+    default long realmRelationId(int index) { return 0L; }
+    default String realmRelationName(int index) { return ""; }
+    default byte realmRelationStatusCode(int index) { return 0; }
+    default byte realmRelationWarGoalCode(int index) { return 0; }
+    default int realmRelationWarScore(int index) { return 0; }
+    default int realmRelationExhaustion(int index) { return 0; }
+    default int realmRelationGrievances(int index) { return 0; }
+    default int realmRelationTrust(int index) { return 0; }
+
     default int acknowledgedActionId() { return 0; }
     default byte acknowledgedAction() { return 0; }
     default int acknowledgedResult() { return 0; }
@@ -296,6 +328,27 @@ public interface ArmyClientMirror {
     }
 
     default boolean requestSetFormation(int armyHandleBits, int formationCode) {
+        return false;
+    }
+
+    default boolean requestSetTactical(int armyHandleBits, int tacticalCode, boolean enabled) {
+        return false;
+    }
+
+    default boolean requestSetSupplyChest(int armyHandleBits) {
+        return false;
+    }
+
+    default boolean requestClearSupplyChest(int armyHandleBits) {
+        return false;
+    }
+
+    default boolean requestSetGarrison(
+            int armyHandleBits, long villageUuidMost, long villageUuidLeast, int guardRadius) {
+        return false;
+    }
+
+    default boolean requestClearGarrison(int armyHandleBits) {
         return false;
     }
 
@@ -317,6 +370,10 @@ public interface ArmyClientMirror {
             long villageUuidLeast,
             int count,
             long[] villagerUuidBits) {
+        return false;
+    }
+
+    default boolean requestHireRecruit(long villagerUuidMost, long villagerUuidLeast) {
         return false;
     }
 

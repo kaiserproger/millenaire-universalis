@@ -1,0 +1,7 @@
+{
+  "schema": "bannerok.army-full-cycle.v1",
+  "status": "restart_required",
+  "phase": "READY_RESTART",
+  "armyHandle": "1048576",
+  "assertions": ["settlement_and_players","settlement_owner_and_resources","controlled_army_create","recruit_membership","army_dimension_persisted","move_physical_progress","rally_physical_progress","opposing_army_created","bidirectional_hostility_configured","battle_owner_target_assignment","battle_enemy_target_assignment","battle_physical_damage","hold_state","logistics_physical_progress","chunk_unload","chunk_reload_membership_order"]
+}

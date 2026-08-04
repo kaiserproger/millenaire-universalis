@@ -7,7 +7,7 @@ package ru.kaiserroman.millenairearmies.network;
  * opaque 32-bit values: their sign has no meaning and must never be used as validation.
  */
 public final class ArmiesProtocol {
-    public static final String VERSION = "3";
+    public static final String VERSION = "7";
 
     public static final byte SECTION_FACTIONS = 1;
     public static final byte SECTION_ARMIES = 1 << 1;
@@ -65,6 +65,7 @@ public final class ArmiesProtocol {
     public static final int MAX_REQUEST_CURSOR = 16_777_215;
     public static final int MAX_CREATE_UNITS = 1_024;
     public static final int MAX_CONTROLLED_SETTLEMENTS = 256;
+    public static final int MAX_REALM_RELATIONS_PER_SNAPSHOT = 128;
     public static final int MAX_AVAILABLE_RECRUITS = 2_048;
     public static final int MAX_RECRUITS_PER_INTENT = 64;
 
@@ -77,6 +78,21 @@ public final class ArmiesProtocol {
     public static final byte ACTION_FOUND_REALM = 5;
     /** Client acknowledgement namespace for RealmActionIntent.ACTION_SET_TAX. */
     public static final byte ACTION_SET_REALM_TAX = 6;
+    public static final byte ACTION_SET_GARRISON = 7;
+    public static final byte ACTION_CLEAR_GARRISON = 8;
+    public static final byte ACTION_HIRE_RECRUIT = 9;
+    public static final byte ACTION_SET_UNIT_LOADOUT = 10;
+    public static final byte ACTION_SET_TACTICAL = 11;
+    public static final byte ACTION_SET_SUPPLY_CHEST = 12;
+
+    public static final int SETTLEMENT_ACCESS_HIRE = 0;
+    public static final int SETTLEMENT_ACCESS_CONTROLLED = 1;
+
+    public static final int RECRUIT_OPTION_ENLIST = 0;
+    public static final int RECRUIT_OPTION_HIRE = 1;
+    public static final int RECRUIT_OPTION_ASSIGN_HIRED = 2;
+    public static final int RECRUIT_OPTION_REPUTATION_LOCKED = 3;
+    public static final int RECRUIT_OPTION_FUNDS_LOCKED = 4;
 
     public static final int RESULT_NONE = 0;
     public static final int RESULT_ACCEPTED = 1;
@@ -100,6 +116,13 @@ public final class ArmiesProtocol {
     public static final byte ORDER_RALLY = 2;
     public static final byte ORDER_LOGISTICS = 3;
     public static final byte ORDER_ATTACK = 4;
+    public static final byte ORDER_GARRISON = 5;
+    public static final byte ORDER_SIEGE = 6;
+    public static final byte ORDER_FOLLOW = 7;
+    public static final byte ORDER_GUARD = 8;
+
+    public static final byte TACTIC_SHIELD_WALL = 0;
+    public static final byte TACTIC_FIRE_AT_WILL = 1;
 
     private ArmiesProtocol() {}
 
@@ -125,6 +148,10 @@ public final class ArmiesProtocol {
     }
 
     public static boolean validStrategicOrder(byte order) {
-        return order >= ORDER_HOLD && order <= ORDER_ATTACK;
+        return order >= ORDER_HOLD && order <= ORDER_GUARD;
+    }
+
+    public static boolean validTacticalCode(byte code) {
+        return code == TACTIC_SHIELD_WALL || code == TACTIC_FIRE_AT_WILL;
     }
 }

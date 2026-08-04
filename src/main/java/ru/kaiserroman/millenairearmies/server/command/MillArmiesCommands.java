@@ -1,5 +1,7 @@
 package ru.kaiserroman.millenairearmies.server.command;
 
+import static com.mojang.brigadier.arguments.BoolArgumentType.bool;
+import static com.mojang.brigadier.arguments.BoolArgumentType.getBool;
 import static com.mojang.brigadier.arguments.IntegerArgumentType.getInteger;
 import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
 import static com.mojang.brigadier.arguments.LongArgumentType.getLong;
@@ -15,6 +17,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
+import ru.kaiserroman.millenairearmies.model.ArmyTacticalState;
 import ru.kaiserroman.millenairearmies.network.ArmiesNetwork;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandAuthority;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
@@ -41,6 +44,9 @@ public final class MillArmiesCommands {
                                 .then(literal("hold")
                                         .executes(context -> orderWithoutPosition(
                                                 context, service, StrategicArmyOrder.HOLD)))
+                                .then(literal("follow")
+                                        .executes(context -> orderWithoutPosition(
+                                                context, service, StrategicArmyOrder.FOLLOW)))
                                 .then(literal("move")
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
@@ -49,10 +55,32 @@ public final class MillArmiesCommands {
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
                                                         context, service, StrategicArmyOrder.RALLY))))
+                                .then(literal("attack")
+                                        .then(argument("position", BlockPosArgument.blockPos())
+                                                .executes(context -> orderAtPosition(
+                                                        context, service, StrategicArmyOrder.ATTACK))))
+                                .then(literal("guard")
+                                        .then(argument("position", BlockPosArgument.blockPos())
+                                                .executes(context -> orderAtPosition(
+                                                        context, service, StrategicArmyOrder.GUARD))))
+                                .then(literal("siege")
+                                        .then(argument("position", BlockPosArgument.blockPos())
+                                                .executes(context -> orderAtPosition(
+                                                        context, service, StrategicArmyOrder.SIEGE))))
                                 .then(literal("logistics")
                                         .then(argument("position", BlockPosArgument.blockPos())
                                                 .executes(context -> orderAtPosition(
-                                                        context, service, StrategicArmyOrder.LOGISTICS)))))));
+                                                        context, service, StrategicArmyOrder.LOGISTICS))))))
+                .then(literal("tactic")
+                        .then(argument("army", longArg(0L, 0xFFFF_FFFFL))
+                                .then(literal("shield_wall")
+                                        .then(argument("enabled", bool())
+                                                .executes(context -> tactical(
+                                                        context, service, ArmyTacticalState.SHIELD_WALL))))
+                                .then(literal("fire_at_will")
+                                        .then(argument("enabled", bool())
+                                                .executes(context -> tactical(
+                                                        context, service, ArmyTacticalState.FIRE_AT_WILL)))))));
     }
 
     private static int openScreen(CommandContext<CommandSourceStack> context) {
@@ -166,6 +194,27 @@ public final class MillArmiesCommands {
         source.sendSuccess(
                 () -> Component.literal(
                         "Army " + unsignedArmy + " order: " + StrategicArmyOrder.displayName(order.code())),
+                true);
+        return 1;
+    }
+
+    private static int tactical(
+            CommandContext<CommandSourceStack> context,
+            ArmyCommandService service,
+            int tacticalFlag) {
+        CommandSourceStack source = context.getSource();
+        long unsignedArmy = getLong(context, "army");
+        boolean enabled = getBool(context, "enabled");
+        long result = service.setTacticalFlag(
+                authority(source), (int) unsignedArmy, tacticalFlag, enabled);
+        if (result != ArmyCommandService.SUCCESS) {
+            return failure(source, result);
+        }
+        String name = tacticalFlag == ArmyTacticalState.SHIELD_WALL
+                ? "shield_wall"
+                : "fire_at_will";
+        source.sendSuccess(
+                () -> Component.literal("Army " + unsignedArmy + " tactic " + name + '=' + enabled),
                 true);
         return 1;
     }

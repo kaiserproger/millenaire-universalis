@@ -19,10 +19,25 @@ public final class ServerIntentRouter {
         public void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent) {}
 
         @Override
+        public void hireRecruit(ServerPlayer player, HireRecruitIntent intent) {}
+
+        @Override
         public void issueOrder(ServerPlayer player, IssueOrderIntent intent) {}
 
         @Override
         public void setFormation(ServerPlayer player, SetFormationIntent intent) {}
+
+        @Override
+        public void setTactical(ServerPlayer player, SetTacticalIntent intent) {}
+
+        @Override
+        public void setSupplyChest(ServerPlayer player, SetSupplyChestIntent intent) {}
+
+        @Override
+        public void setUnitLoadout(ServerPlayer player, SetUnitLoadoutIntent intent) {}
+
+        @Override
+        public void setGarrison(ServerPlayer player, SetGarrisonIntent intent) {}
 
         @Override
         public void realmAction(ServerPlayer player, RealmActionIntent intent) {}
@@ -60,12 +75,32 @@ public final class ServerIntentRouter {
         sink.recruitUnits(player, intent);
     }
 
+    static void dispatch(ServerPlayer player, HireRecruitIntent intent) {
+        sink.hireRecruit(player, intent);
+    }
+
     static void dispatch(ServerPlayer player, IssueOrderIntent intent) {
         sink.issueOrder(player, intent);
     }
 
     static void dispatch(ServerPlayer player, SetFormationIntent intent) {
         sink.setFormation(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, SetTacticalIntent intent) {
+        sink.setTactical(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, SetSupplyChestIntent intent) {
+        sink.setSupplyChest(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, SetUnitLoadoutIntent intent) {
+        sink.setUnitLoadout(player, intent);
+    }
+
+    static void dispatch(ServerPlayer player, SetGarrisonIntent intent) {
+        sink.setGarrison(player, intent);
     }
 
     static void dispatch(ServerPlayer player, RealmActionIntent intent) {

@@ -5,23 +5,16 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
+import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.client.ArmyClientMirror;
 import ru.kaiserroman.millenairearmies.client.ArmyClientState;
 
 /**
- * Screenless field-command HUD. It deliberately operates only on the immutable client mirror and
- * sends the same validated intents as the strategic screen.
+ * Screenless field command strip. It deliberately operates only on the immutable client mirror and
+ * sends the same validated intents as the strategic screens. The strip is a compact bottom-left
+ * parchment panel: warband chips, the selected warband's status, and the Alt command chords.
  */
 public final class ArmyCommandHud {
-    private static final int PANEL = 0xD91B1B1B;
-    private static final int PANEL_SELECTED = 0xE04B3A22;
-    private static final int BORDER = 0xFFE0B55A;
-    private static final int TEXT = 0xFFF2F2F2;
-    private static final int MUTED = 0xFFB8B8B8;
-    private static final int GOOD = 0xFF8BD37A;
-    private static final int WARNING = 0xFFE9C45C;
-    private static final int BAD = 0xFFE36A5A;
-
     private static final Component TITLE = Component.translatable("gui.millenaire_armies.hud.title");
     private static final Component NO_ARMIES = Component.translatable("gui.millenaire_armies.hud.no_armies");
     private static final Component COMMAND_UNAVAILABLE = Component.translatable("gui.millenaire_armies.command.unavailable");
@@ -34,6 +27,29 @@ public final class ArmyCommandHud {
             "gui.millenaire_armies.formation.square",
             "gui.millenaire_armies.formation.skirmish"
     };
+    private static final String[] ORDER_KEYS = {
+            "gui.millenaire_armies.order.hold",
+            "gui.millenaire_armies.order.move",
+            "gui.millenaire_armies.order.rally",
+            "gui.millenaire_armies.order.logistics",
+            "gui.millenaire_armies.order.attack",
+            "gui.millenaire_armies.order.garrison",
+            "gui.millenaire_armies.order.siege"
+    };
+
+    private static final String[] HINT_LABEL_KEYS = {
+            "gui.millenaire_armies.action.hold_short",
+            "gui.millenaire_armies.action.move_short",
+            "gui.millenaire_armies.action.attack_short",
+            "gui.millenaire_armies.action.rally_short",
+            null,
+            "gui.millenaire_armies.action.siege_short",
+            "gui.millenaire_armies.action.garrison_short",
+            "gui.millenaire_armies.action.logistics_short",
+    };
+
+    private static final char[] HINT_KEYS = {'H', 'M', 'A', 'R', 'F', 'S', 'G', 'L'};
+    private static final int HINT_COUNT = HINT_KEYS.length;
 
     private static boolean active;
     private static int selectedArmyId;
@@ -42,7 +58,50 @@ public final class ArmyCommandHud {
     private static Component feedback;
     private static long feedbackUntil;
 
+    record HudLayout(
+            int x, int y, int width, int height,
+            int chipStart, int chipCount, int chipX, int chipY, int chipWidth, int chipGap,
+            int infoX, int infoY, int infoWidth,
+            int hintsX, int hintsY, int hintsWidth,
+            int feedbackY) {
+    }
+
     private ArmyCommandHud() {
+    }
+
+    static HudLayout computeHudLayout(int screenWidth, int screenHeight, int armyCount, int selectedIndex) {
+        int x = 8;
+        int width = Math.min(480, Math.max(160, screenWidth - 16));
+        if (x + width > screenWidth) {
+            width = screenWidth - x;
+        }
+        int height = 50;
+        int y = screenHeight - height - 6;
+        int capacity = screenWidth < 400 ? 3 : screenWidth < 560 ? 6 : 9;
+        int chipCount = Math.min(armyCount, capacity);
+        int chipStart;
+        if (selectedIndex >= chipCount) {
+            chipStart = Math.min(selectedIndex - chipCount + 1, armyCount - chipCount);
+        } else {
+            chipStart = 0;
+        }
+        if (chipStart < 0) chipStart = 0;
+        int chipX = x + 8;
+        int chipY = y + 6;
+        int chipWidth = 13;
+        int chipGap = 2;
+        int infoX = chipX + chipCount * (chipWidth + chipGap) + (chipCount > 0 ? 6 : 0);
+        int infoWidth = Math.max(1, width - (infoX - x) - 8);
+        int infoY = y + 6;
+        int hintsX = x + 8;
+        int hintsY = y + 31;
+        int hintsWidth = width - 16;
+        int feedbackY = y - 18;
+        return new HudLayout(x, y, width, height,
+                chipStart, chipCount, chipX, chipY, chipWidth, chipGap,
+                infoX, infoY, infoWidth,
+                hintsX, hintsY, hintsWidth,
+                feedbackY);
     }
 
     public static void toggle() {
@@ -69,7 +128,6 @@ public final class ArmyCommandHud {
         return selectedArmyId;
     }
 
-    /** Handles only Alt-modified command chords so normal Minecraft controls remain untouched. */
     public static boolean handleKey(int key, int action, int modifiers) {
         if (!active || action != GLFW.GLFW_PRESS || (modifiers & GLFW.GLFW_MOD_ALT) == 0) {
             return false;
@@ -91,7 +149,9 @@ public final class ArmyCommandHud {
             case GLFW.GLFW_KEY_R -> issueOrder(mirror, 2);
             case GLFW.GLFW_KEY_L -> issueOrder(mirror, 3);
             case GLFW.GLFW_KEY_A -> issueOrder(mirror, 4);
+            case GLFW.GLFW_KEY_S -> issueOrder(mirror, 6);
             case GLFW.GLFW_KEY_F -> cycleFormation(mirror);
+            case GLFW.GLFW_KEY_G -> assignGarrison(mirror);
             default -> false;
         };
     }
@@ -111,136 +171,167 @@ public final class ArmyCommandHud {
         Font font = minecraft.font;
         int screenWidth = minecraft.getWindow().getGuiScaledWidth();
         int screenHeight = minecraft.getWindow().getGuiScaledHeight();
-        renderArmyStrip(graphics, font, mirror, screenWidth);
-        renderCommandRail(graphics, font, mirror, screenHeight);
-        renderSelectedArmy(graphics, font, mirror, screenWidth, screenHeight);
+        int selectedIndex = selectedArmyIndex(mirror);
 
-        if (feedback != null && System.currentTimeMillis() < feedbackUntil) {
-            int textWidth = font.width(feedback);
-            int x = (screenWidth - textWidth) / 2;
-            int y = screenHeight - 54;
-            graphics.fill(x - 5, y - 4, x + textWidth + 5, y + 12, PANEL);
-            graphics.drawString(font, feedback, x, y, WARNING, true);
-        }
+        HudLayout layout = computeHudLayout(screenWidth, screenHeight, mirror.armyCount(), Math.max(0, selectedIndex));
+        renderHud(graphics, font, mirror, selectedIndex, layout);
+        drawFeedback(graphics, font, screenWidth, layout);
     }
 
-    private static void renderArmyStrip(GuiGraphics graphics, Font font, ArmyClientMirror mirror, int screenWidth) {
-        int maxVisible = Math.max(1, (screenWidth - 24) / 62);
-        int count = Math.min(Math.min(9, maxVisible), mirror.armyCount());
-        if (!mirror.isReady() || count == 0) {
-            int width = Math.min(screenWidth - 16, Math.max(font.width(TITLE), font.width(NO_ARMIES)) + 18);
-            int x = (screenWidth - width) / 2;
-            graphics.fill(x, 8, x + width, 39, PANEL);
-            outline(graphics, x, 8, width, 31, BORDER);
-            graphics.drawCenteredString(font, TITLE, screenWidth / 2, 13, TEXT);
-            graphics.drawCenteredString(font, NO_ARMIES, screenWidth / 2, 25, MUTED);
+    private static void renderHud(
+            GuiGraphics graphics, Font font, ArmyClientMirror mirror,
+            int selectedIndex, HudLayout l) {
+
+        if (!mirror.isReady() || mirror.armyCount() == 0) {
+            int h = 24;
+            int y = l.y() + l.height() - h;
+            graphics.fill(l.x(), y, l.x() + l.width(), y + h, MilitaryUi.PANEL);
+            MilitaryUi.outline(graphics, l.x(), y, l.width(), h, MilitaryUi.BORDER_DARK);
+            String titleC = font.plainSubstrByWidth(TITLE.getString(), Math.max(40, l.width() - 16 - 60));
+            graphics.drawString(font, titleC, l.x() + 8, y + 8, MilitaryUi.WARNING, true);
+            int remW = l.width() - 16 - font.width(titleC) - 8;
+            String noA = font.plainSubstrByWidth(NO_ARMIES.getString(), Math.max(20, remW));
+            graphics.drawString(font, noA, l.x() + 8 + font.width(titleC) + 8, y + 8, MilitaryUi.MUTED, false);
             return;
         }
 
-        int cardWidth = Math.min(104, Math.max(76, (screenWidth - 24) / count));
-        int stripWidth = cardWidth * count + Math.max(0, count - 1) * 2;
-        int startX = (screenWidth - stripWidth) / 2;
-        for (int index = 0; index < count; index++) {
-            int x = startX + index * (cardWidth + 2);
-            boolean selected = hasSelectedArmy && mirror.armyId(index) == selectedArmyId;
-            graphics.fill(x, 8, x + cardWidth, 39, selected ? PANEL_SELECTED : PANEL);
-            outline(graphics, x, 8, cardWidth, 31, selected ? BORDER : 0xFF555555);
-            String name = font.plainSubstrByWidth(mirror.armyName(index), cardWidth - 22);
-            graphics.drawString(font, Integer.toString(index + 1), x + 6, 12, selected ? BORDER : MUTED, true);
-            graphics.drawString(font, name, x + 19, 12, TEXT, true);
-            String status = mirror.armyReadyUnitCount(index) + "/" + mirror.armyUnitCount(index)
-                    + "  " + mirror.armySupplyPercent(index) + "%";
-            graphics.drawString(font, status, x + 5, 25,
-                    statusColor(mirror.armySupplyPercent(index)), false);
+        MilitaryUi.frame(graphics, l.x(), l.y(), l.width(), l.height());
+
+        int gap = 4;
+        for (int i = 0; i < l.chipCount(); i++) {
+            int cx = l.chipX() + i * (l.chipWidth() + l.chipGap());
+            int realIndex = l.chipStart() + i;
+            boolean sel = realIndex == selectedIndex;
+            graphics.fill(cx, l.chipY(), cx + l.chipWidth(), l.chipY() + 12,
+                    sel ? MilitaryUi.CARD_SELECTED : MilitaryUi.PANEL_INNER);
+            MilitaryUi.outline(graphics, cx, l.chipY(), l.chipWidth(), 12,
+                    sel ? MilitaryUi.GOLD : MilitaryUi.BORDER_DARK);
+            if (sel) {
+                graphics.fill(cx, l.chipY(), cx + 3, l.chipY() + 12, MilitaryUi.GOLD);
+            }
+            String num = Integer.toString(realIndex + 1);
+            graphics.drawCenteredString(font, num, cx + l.chipWidth() / 2, l.chipY() + 2,
+                    sel ? MilitaryUi.WARNING : MilitaryUi.MUTED);
+        }
+
+        if (selectedIndex < 0 || selectedIndex >= mirror.armyCount()) return;
+
+        int rightX = l.infoX() + l.infoWidth();
+        int row1TextY = l.infoY() + 6;
+
+        String ready = mirror.armyReadyUnitCount(selectedIndex) + "/" + mirror.armyUnitCount(selectedIndex);
+        String supply = mirror.armySupplyPercent(selectedIndex) + "%";
+        String morale = mirror.armyMoralePercent(selectedIndex) + "%";
+        boolean hasGarrison = mirror.armyHasGarrison(selectedIndex);
+        int orderCode = mirror.armyOrderTypeCode(selectedIndex);
+        int formation = mirror.armyFormationCode(selectedIndex);
+        boolean wide = l.width() >= 400;
+
+        int orderItemW = wide ? 54 : 16;
+        int formItemW = wide ? 54 : 16;
+        int garrisonItemW = 16;
+
+        int statusW = 0;
+        statusW += font.width(ready) + gap;
+        statusW += font.width(supply) + gap;
+        statusW += font.width(morale) + gap;
+        statusW += orderItemW + gap;
+        statusW += formItemW + gap;
+        if (hasGarrison) statusW += garrisonItemW + gap;
+
+        int nameMax = l.infoWidth() - statusW - gap;
+        if (nameMax < 0) nameMax = 0;
+
+        if (nameMax >= 30) {
+            String name = font.plainSubstrByWidth(mirror.armyName(selectedIndex), nameMax);
+            graphics.drawString(font, name, l.infoX(), row1TextY, MilitaryUi.GOLD, true);
+        }
+
+        int itemX = rightX;
+
+        itemX -= orderItemW;
+        MilitaryUi.orderGlyph(graphics, itemX, l.infoY() + 3, orderCode, MilitaryUi.GOLD);
+        if (wide) {
+            String oLabel = font.plainSubstrByWidth(orderName(orderCode), 36);
+            graphics.drawString(font, oLabel, itemX + 18, row1TextY, MilitaryUi.MUTED, false);
+        }
+        itemX -= gap;
+
+        itemX -= formItemW;
+        MilitaryUi.formationMark(graphics, itemX, l.infoY() + 2, formation, MilitaryUi.GOLD);
+        if (wide) {
+            String fLabel = font.plainSubstrByWidth(formationName(formation), 36);
+            graphics.drawString(font, fLabel, itemX + 18, row1TextY, MilitaryUi.MUTED, false);
+        }
+        itemX -= gap;
+
+        if (hasGarrison) {
+            itemX -= garrisonItemW;
+            MilitaryUi.orderGlyph(graphics, itemX, l.infoY() + 3, 5, MilitaryUi.GOLD);
+            itemX -= gap;
+        }
+
+        itemX -= font.width(morale) + gap;
+        graphics.drawString(font, morale, itemX, row1TextY,
+                MilitaryUi.statusColor(mirror.armyMoralePercent(selectedIndex)), false);
+        itemX -= font.width(supply) + gap;
+        graphics.drawString(font, supply, itemX, row1TextY,
+                MilitaryUi.statusColor(mirror.armySupplyPercent(selectedIndex)), false);
+        itemX -= font.width(ready) + gap;
+        graphics.drawString(font, ready, itemX, row1TextY, MilitaryUi.TEXT, false);
+
+        String altPrefix = "Alt:";
+        int prefixW = font.width(altPrefix) + gap;
+        int hintX = l.hintsX();
+        int remainingW = l.hintsWidth() - prefixW;
+        graphics.drawString(font, altPrefix, hintX, l.hintsY(), MilitaryUi.GOLD, true);
+        hintX += prefixW;
+
+        for (int i = 0; i < HINT_COUNT; i++) {
+            String label;
+            if (HINT_LABEL_KEYS[i] == null) {
+                label = formationName(mirror.armyFormationCode(selectedIndex));
+            } else {
+                label = Component.translatable(HINT_LABEL_KEYS[i]).getString();
+            }
+            String entry = String.valueOf(HINT_KEYS[i]) + " ";
+            int entryW = font.width(entry);
+            int labelW = font.width(label);
+            int totalW = entryW + labelW + gap;
+            if (totalW > remainingW) continue;
+            remainingW -= totalW;
+            graphics.drawString(font, entry, hintX, l.hintsY(), MilitaryUi.GOLD, true);
+            hintX += entryW;
+            graphics.drawString(font, label, hintX, l.hintsY(), MilitaryUi.MUTED, false);
+            hintX += labelW + gap;
         }
     }
 
-    private static void renderCommandRail(GuiGraphics graphics, Font font, ArmyClientMirror mirror, int screenHeight) {
-        int x = 8;
-        int railHeight = 125;
-        int y = Math.max(42, (screenHeight - railHeight) / 2);
-        if (y + railHeight > screenHeight - 45) {
-            y = Math.max(42, screenHeight - 45 - railHeight);
-        }
-        drawTranslatedCommand(graphics, font, x, y, "Alt+H", "gui.millenaire_armies.action.hold", true);
-        drawTranslatedCommand(graphics, font, x, y + 21, "Alt+M", "gui.millenaire_armies.action.move", true);
-        drawTranslatedCommand(graphics, font, x, y + 42, "Alt+R", "gui.millenaire_armies.action.rally", true);
-        drawTranslatedCommand(graphics, font, x, y + 63, "Alt+A", "gui.millenaire_armies.action.attack", true);
-        String formation = selectedFormationName(mirror);
-        drawCommand(graphics, font, x, y + 84, "Alt+F",
-                Component.translatable("gui.millenaire_armies.hud.formation", formation).getString(), true);
-        drawTranslatedCommand(graphics, font, x, y + 105, "Alt+L", "gui.millenaire_armies.action.logistics", true);
-    }
-
-    private static void renderSelectedArmy(
-            GuiGraphics graphics,
-            Font font,
-            ArmyClientMirror mirror,
-            int screenWidth,
-            int screenHeight) {
-        int index = selectedArmyIndex(mirror);
-        if (index < 0) {
-            return;
-        }
-        int width = Math.min(360, screenWidth - 32);
-        int x = (screenWidth - width) / 2;
-        int y = screenHeight - 39;
-        graphics.fill(x, y, x + width, y + 31, PANEL);
-        outline(graphics, x, y, width, 31, 0xFF555555);
-
-        String name = font.plainSubstrByWidth(mirror.armyName(index), width / 2 - 10);
-        graphics.drawString(font, name, x + 7, y + 5, TEXT, true);
-        String order = Component.translatable(orderKey(mirror.armyOrderTypeCode(index))).getString();
-        graphics.drawString(font, order, x + width - 7 - font.width(order), y + 5, WARNING, true);
-
-        int barY = y + 19;
-        int barWidth = (width - 28) / 2;
-        drawBar(graphics, font, x + 7, barY, barWidth,
-                Component.translatable("gui.millenaire_armies.label.morale").getString(),
-                mirror.armyMoralePercent(index));
-        drawBar(graphics, font, x + 14 + barWidth, barY, barWidth,
-                Component.translatable("gui.millenaire_armies.label.supplies").getString(),
-                mirror.armySupplyPercent(index));
-    }
-
-    private static void drawTranslatedCommand(
-            GuiGraphics graphics,
-            Font font,
-            int x,
-            int y,
-            String key,
-            String translationKey,
-            boolean armyRequired) {
-        drawCommand(graphics, font, x, y, key, Component.translatable(translationKey).getString(), armyRequired);
-    }
-
-    private static void drawCommand(
-            GuiGraphics graphics,
-            Font font,
-            int x,
-            int y,
-            String key,
-            String label,
-            boolean armyRequired) {
-        int width = 145;
-        graphics.fill(x, y, x + width, y + 20, PANEL);
-        outline(graphics, x, y, width, 20, 0xFF555555);
-        graphics.fill(x + 3, y + 3, x + 44, y + 17, 0xE0333333);
-        graphics.drawCenteredString(font, key, x + 23, y + 6, BORDER);
-        int color = armyRequired && !hasSelectedArmy ? 0xFF777777 : TEXT;
-        graphics.drawString(font, font.plainSubstrByWidth(label, width - 53), x + 50, y + 6, color, false);
-    }
-
-    private static void drawBar(GuiGraphics graphics, Font font, int x, int y, int width, String label, int value) {
-        int clamped = Math.max(0, Math.min(100, value));
-        graphics.fill(x, y, x + width, y + 8, 0xFF292929);
-        graphics.fill(x, y, x + width * clamped / 100, y + 8, statusColor(clamped));
-        String text = label + " " + clamped + "%";
-        graphics.drawCenteredString(font, text, x + width / 2, y, 0xFFFFFFFF);
+    private static void drawFeedback(
+            GuiGraphics graphics, Font font, int screenWidth, HudLayout l) {
+        if (feedback == null || System.currentTimeMillis() >= feedbackUntil) return;
+        String fbText = font.plainSubstrByWidth(feedback.getString(), Math.max(20, screenWidth - 20));
+        int fbWidth = font.width(fbText);
+        int fbX = Math.max(4, (screenWidth - fbWidth) / 2);
+        int fbY = l.feedbackY();
+        graphics.fill(fbX - 4, fbY, fbX + fbWidth + 4, fbY + 14, MilitaryUi.PANEL);
+        MilitaryUi.outline(graphics, fbX - 4, fbY, fbWidth + 8, 14, MilitaryUi.BORDER_DARK);
+        graphics.drawString(font, fbText, fbX, fbY + 3, MilitaryUi.WARNING, true);
     }
 
     private static boolean issueOrder(ArmyClientMirror mirror, int orderCode) {
         boolean accepted = hasSelectedArmy && mirror.requestIssueOrder(selectedArmyId, orderCode);
+        showFeedback(accepted ? COMMAND_SENT : COMMAND_UNAVAILABLE);
+        return true;
+    }
+
+    private static boolean assignGarrison(ArmyClientMirror mirror) {
+        int index = selectedArmyIndex(mirror);
+        int radius = index >= 0 && mirror.armyHasGarrison(index)
+                ? mirror.armyGarrisonRadius(index)
+                : ArmiesConfig.GARRISON_DEFAULT_RADIUS;
+        boolean accepted = hasSelectedArmy && mirror.requestSetGarrison(
+                selectedArmyId, 0L, 0L, radius);
         showFeedback(accepted ? COMMAND_SENT : COMMAND_UNAVAILABLE);
         return true;
     }
@@ -288,39 +379,22 @@ public final class ArmyCommandHud {
         return -1;
     }
 
-    private static String selectedFormationName(ArmyClientMirror mirror) {
-        int index = selectedArmyIndex(mirror);
-        int code = index < 0 ? 0 : mirror.armyFormationCode(index);
+    private static String formationName(int code) {
         if (code < 0 || code >= FORMATION_KEYS.length) {
             code = 0;
         }
         return Component.translatable(FORMATION_KEYS[code]).getString();
     }
 
-    private static String orderKey(int orderCode) {
-        return switch (orderCode) {
-            case 0 -> "gui.millenaire_armies.order.hold";
-            case 1 -> "gui.millenaire_armies.order.move";
-            case 2 -> "gui.millenaire_armies.order.rally";
-            case 3 -> "gui.millenaire_armies.order.logistics";
-            case 4 -> "gui.millenaire_armies.order.attack";
-            default -> "gui.millenaire_armies.order.unknown";
-        };
-    }
-
-    private static int statusColor(int value) {
-        return value >= 67 ? GOOD : value >= 34 ? WARNING : BAD;
+    private static String orderName(int orderCode) {
+        if (orderCode < 0 || orderCode >= ORDER_KEYS.length) {
+            return Component.translatable("gui.millenaire_armies.order.unknown").getString();
+        }
+        return Component.translatable(ORDER_KEYS[orderCode]).getString();
     }
 
     private static void showFeedback(Component message) {
         feedback = message;
         feedbackUntil = System.currentTimeMillis() + 1800L;
-    }
-
-    private static void outline(GuiGraphics graphics, int x, int y, int width, int height, int color) {
-        graphics.fill(x, y, x + width, y + 1, color);
-        graphics.fill(x, y + height - 1, x + width, y + height, color);
-        graphics.fill(x, y, x + 1, y + height, color);
-        graphics.fill(x + width - 1, y, x + width, y + height, color);
     }
 }

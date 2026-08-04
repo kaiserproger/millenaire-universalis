@@ -13,13 +13,28 @@ base {
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
 }
 
 repositories {
+    maven {
+        name = 'bundledKernels'
+        url = uri(rootProject.file('local-maven'))
+        content {
+            includeGroup 'ru.kaiserroman.millenaire'
+        }
+    }
+}
+
+configurations {
+    embeddedKernels
+    implementation.extendsFrom embeddedKernels
 }
 
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
+    embeddedKernels "ru.kaiserroman.millenaire:millenaire-realm:${realm_version}"
+    embeddedKernels "ru.kaiserroman.millenaire:millenaire-simulation:${simulation_version}"
 }
 
 sourceSets.main.resources {
@@ -55,6 +70,18 @@ tasks.withType(AbstractArchiveTask).configureEach {
     reproducibleFileOrder = true
 }
 
+tasks.named('jar', Jar).configure {
+    from({
+        configurations.embeddedKernels.collect { dependency -> zipTree(dependency) }
+    }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/*.SF'
+        exclude 'META-INF/*.DSA'
+        exclude 'META-INF/*.RSA'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -80,6 +107,20 @@ dependencies {
             exclude 'sarvaroptimizer_*.jar'
             exclude 'neoforge-carpet-*.jar'
         }
+        // The dedicated visual battle fixture uses Carpet's server-side fake-player command.
+        // Load the exact same test-only JAR on the UserDev client so NeoForge's BOTH-side mod
+        // handshake remains symmetrical; it is never packaged into the Armies artifact.
+        runtimeOnly files(
+                rootProject.file(
+                        'qa/full-cycle/runs/codex-armies-20260803-2345/server/mods/neoforge-carpet-1.21.1-1.0.8+v251027.jar'),
+                rootProject.file(
+                        'qa/full-cycle/runs/codex-armies-20260803-2345/server/mods/pandalib-neoforge-1.21.1-0.6.0.jar'),
+                rootProject.file(
+                        'qa/full-cycle/runs/codex-armies-20260803-2345/server/mods/sarvaroptimizer_compat-1.0.0.jar'),
+                rootProject.file(
+                        'qa/full-cycle/runs/codex-armies-20260803-2345/server/mods/sarvaroptimizer_millenaire-1.0.0.jar'),
+                rootProject.file(
+                        'qa/full-cycle/runs/codex-armies-20260803-2345/server/mods/sarvaroptimizer_nms-1.0.0.jar'))
         // Client render optimizers are intentionally omitted here: UserDev places file
         // dependencies on its transformation classpath instead of a normal mods directory, which
         // makes Sodium look like a library to FML.  The distributable client tests those JARs in a
@@ -114,6 +155,132 @@ tasks.register('runSettlementEconomySelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runSimulationSavedDataSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks stable simulation keys, settlement state and event journal NBT round-trip.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.SimulationSavedDataSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runRealmSavedDataSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks typed Realm subjects, mixed membership and canonical Realm NBT round-trip.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.RealmSavedDataSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runLegacyRealmMirrorSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks legacy player Realm founding, capture and fiscal state mirror into canonical Realm.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.LegacyRealmMirrorServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runRealmAdministrationSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks canonical player Realm founding, compatibility dual-write and Simulation binding.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.RealmAdministrationServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runRealmEvolutionSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks bounded Realm evolution from settlement prosperity, trade, culture and war damage.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.RealmEvolutionServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runRealmHistoricalSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks centuries of stability, rapid historical collapse and multi-decade restoration.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.RealmHistoricalServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runAutonomousRealmLifecycleSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks hysteretic NPC Realm formation, terminal dissolution and player safety.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.AutonomousRealmLifecycleServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runCanonicalRealmDiplomacySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks canonical Realm war decisions, military policy and physical battle outcomes.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.CanonicalRealmDiplomacyServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runCanonicalArmyRealmIdentitySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks controller Realm mapping and stale ECS handle protection.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.server.integration.CanonicalArmyRealmIdentityResolverSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runMillenaireWorldMutationSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks world mutation FIFO commit, persisted retry and failure exhaustion.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireWorldMutationServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runSimulationTradePricePolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks Simulation scarcity mapping into bounded Millenaire trade prices.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.SimulationTradePricePolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runMillenairePhysicalProjectionSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks Realm/Simulation stock, construction, relation and raid projection into Millenaire.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.MillenairePhysicalProjectionPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runMillenaireRegionalDynamicsSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks Millenaire regional shock propagation and auditable refugee flows.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireRegionalDynamicsServiceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runSimulationBattleImpactSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks physical battle and siege events become bounded regional simulation shocks.'
+    classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.SimulationBattleImpactAdapterSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runNetworkStateSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs bounded armies network, metadata and primitive client mirror self-tests.'
@@ -132,6 +299,33 @@ tasks.register('runArmyUiStateSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runPackedGarrisonStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks packed garrison bindings, upkeep degradation/recovery and cleanup.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PackedGarrisonStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runGarrisonExecutionPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks bounded garrison radius, regroup and defensive target policy.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.GarrisonExecutionPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runGarrisonAssignmentPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks stale, permission, dimension, settlement and geometry rejection.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.garrison.GarrisonAssignmentPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('validateArmyUiResources', JavaExec) {
     group = 'verification'
     description = 'Checks paired locales, literal UI keys, blank values and unfinished resource text.'
@@ -146,7 +340,28 @@ tasks.register('validateArmyUiResources', JavaExec) {
 
 tasks.named('check') {
     dependsOn 'runArmyUiStateSelfTest', 'validateArmyUiResources',
-            'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest'
+            'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest',
+            'runPackedGarrisonStateSelfTest', 'runGarrisonExecutionPolicySelfTest',
+            'runGarrisonAssignmentPolicySelfTest', 'runSettlementEconomySelfTest',
+            'runSimulationSavedDataSelfTest', 'runRealmSavedDataSelfTest',
+            'runLegacyRealmMirrorSelfTest', 'runRealmAdministrationSelfTest',
+            'runRealmEvolutionSelfTest', 'runRealmHistoricalSelfTest',
+            'runAutonomousRealmLifecycleSelfTest', 'runCanonicalRealmDiplomacySelfTest',
+            'runCanonicalArmyRealmIdentitySelfTest', 'runMillenaireWorldMutationSelfTest',
+            'runSimulationTradePricePolicySelfTest', 'runMillenairePhysicalProjectionSelfTest',
+            'runMillenaireRegionalDynamicsSelfTest',
+            'runSimulationBattleImpactSelfTest',
+            'runNetworkStateSelfTest',
+            'runArmyPersistenceSelfTest',
+            'runPackedUnitRoleStateSelfTest',
+            'runPackedArmySupplyStateSelfTest',
+            'runArmyTacticalStateSelfTest',
+            'runPhysicalBattleEventLogSelfTest',
+            'runBattleTargetPolicySelfTest',
+            'runSettlementBlockProtectionPolicySelfTest',
+            'runArmyUpkeepPolicySelfTest',
+            'runFeudalLevyPolicySelfTest',
+            'runPhysicalSiegeCoordinatorSelfTest', 'runRealmMilitaryAdapterSelfTest'
 }
 
 tasks.register('runPlayerRealmPersistenceSelfTest', JavaExec) {
@@ -163,6 +378,69 @@ tasks.register('runFormationCoordinatorSelfTest', JavaExec) {
     description = 'Checks compact formation slots, assembly gating, tactical roles, cohesion and revision reset.'
     classpath = sourceSets.main.runtimeClasspath + files(rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
     mainClass = 'ru.kaiserroman.millenairearmies.server.execution.ArmyFormationCoordinatorSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPhysicalBattleEventLogSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks bounded neutral physical battle events and slow-consumer gap reporting.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.PhysicalBattleEventLogSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runBattleTargetPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Proves strategic combat targets live hostile army members, never civilians.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.BattleTargetPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runFeudalLevyPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks deterministic loyal levy calls, refusal and feudal rebellion.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.realm.FeudalLevyPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runArmyUpkeepPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks recurring levy, regular and noble tariffs plus unpaid consequences.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.economy.ArmyUpkeepPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runSettlementBlockProtectionPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks foreign settlement slowdown, critical-block denial and bounded siege breaches.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.integration.millenaire.SettlementBlockProtectionPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPhysicalSiegeCoordinatorSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks neutral physical siege start, progress, secured and revision reset events.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.PhysicalSiegeCoordinatorSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runRealmMilitaryAdapterSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks Realm hostility input and fail-closed aggregation of physical siege outcomes.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.execution.RealmMilitaryAdapterSelfTest'
     jvmArgs '-ea'
     dependsOn classes
 }
@@ -208,6 +486,33 @@ tasks.register('runArmyPersistenceSelfTest', JavaExec) {
     description = 'Checks NBT round-trip parity for packed army, command, faction and logistics state.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'ru.kaiserroman.millenairearmies.persistence.ArmyPersistenceSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPackedUnitRoleStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks unit-role descriptor restore/readback and invalid persistence-safe flag handling.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.unit.PackedUnitRoleStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPackedArmySupplyStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks persistent army supply chest assignment, mutation and cold restore invariants.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PackedArmySupplyStateSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runArmyTacticalStateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks shield-wall and fire-at-will bits compose safely with formation state.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.model.ArmyTacticalStateSelfTest'
     jvmArgs '-ea'
     dependsOn classes
 }

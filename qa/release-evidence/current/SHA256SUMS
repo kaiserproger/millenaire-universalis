@@ -1,0 +1,10 @@
+fa2d934a2d97e259875fbe4fcc47c0c752819ee2ab3d15b092dd1159628c5462  build/libs/millenaire_armies-1.0.0.jar
+321dcfff7796f5326c6ea6e7343c17de2ff18305e90df4574dfab3b71829bd47  local-maven/ru/kaiserroman/millenaire/millenaire-realm/1.0.0/millenaire-realm-1.0.0.jar
+28cb49b4e985ed4216d01fa8642d12df9471f9c459e8e38d2edea9bc97a0b008  local-maven/ru/kaiserroman/millenaire/millenaire-simulation/1.0.0/millenaire-simulation-1.0.0.jar
+02a45a6bd266f82f10cd620c381131643a5bc26f071e532229b91329b4cedd78  qa/release-evidence/current/full-cycle-result.json
+b2a0ddbc1e8f012309d971a4a748b9b335f32fc8180fcff4af3a02fa6741f352  qa/release-evidence/current/pre-restart-state.json
+c7bb5e4ce9e2332a00884691f771ee46fb3d1ecb2b647133868161b794850b55  qa/release-evidence/current/post-restart-state.json
+90ff7fb82c766492be0218f991b403af72f1ca8f254736a300d733599ad30586  qa/release-evidence/current/static-audit.json
+70a9fa7c2a7570dc40e4a42f1b9fd367b28b3009038278158dc361d7e137cf8f  qa/release-evidence/current/runtime-key-events.log
+63e548cb07f546f7aa6bbe43d0582994fbc24ee5dcc65a5301eda7b974db97ae  qa/release-evidence/current/readiness.json
+93d29a9832f0e31629050dfcd696ff89f8a5b8c64044e052e49e1476417cdf0d  qa/release-evidence/README-RU.md

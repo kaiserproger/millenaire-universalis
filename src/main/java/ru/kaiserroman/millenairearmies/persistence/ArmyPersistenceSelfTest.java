@@ -14,6 +14,7 @@ import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.model.ArmyOrder;
 import ru.kaiserroman.millenairearmies.model.ArmyOrderType;
 import ru.kaiserroman.millenairearmies.model.FactionAllegiance;
+import ru.kaiserroman.millenairearmies.server.unit.PackedUnitRoleState;
 import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
 
 /** Run with assertions enabled; exercises an in-memory NBT save/load/save round trip. */
@@ -41,6 +42,19 @@ public final class ArmyPersistenceSelfTest {
         int blueUnit = sourceEcs.createUnit(blue, 11, 21, PackedArmyEcs.packBlockPos(7, 67, 8));
         int redUnit = sourceEcs.createUnit(red, 12, 22, PackedArmyEcs.packBlockPos(9, 68, 10));
         sourceEcs.createUnit(PackedArmyEcs.NO_ARMY, 13, 23, PackedArmyEcs.packBlockPos(11, 69, 12));
+        PackedUnitRoleState sourceRoles = new PackedUnitRoleState();
+        sourceRoles.assign(
+                blueUnit, 10_001, 20_001, 30_001, PackedUnitRoleState.TROOP_CLASS_REGULAR);
+        sourceRoles.assign(
+                redUnit, 10_002, 20_002, 30_002, PackedUnitRoleState.TROOP_CLASS_NOBLE);
+        sourceRoles.assignLoadoutOnly(redUnit, 30_003);
+        sourceRoles.recordUpkeepMissed(redUnit);
+        sourceRoles.recordUpkeepMissed(redUnit);
+        sourceRoles.markEquipmentProjected(blueUnit);
+        long sourceRoleRevision = sourceRoles.revision();
+        PackedArmySupplyState sourceSupplies = new PackedArmySupplyState();
+        sourceSupplies.assign(blue, overworld, PackedArmyEcs.packBlockPos(12, 64, 13));
+        long sourceSupplyRevision = sourceSupplies.revision();
 
         StableItemTable items = new StableItemTable();
         int ironKey = items.intern(ResourceLocation.parse("minecraft:iron_ingot"));
@@ -91,6 +105,16 @@ public final class ArmyPersistenceSelfTest {
         economy.observePhysicalStock(consumer, 0, 0);
         check(economy.tryDebit(producer, 0, 24), "economy test shipment debited");
         economy.addShipment(producer, consumer, 0, 24, 400L);
+        PackedGarrisonState garrisons = new PackedGarrisonState(1);
+        check(garrisons.assign(
+                blue,
+                0x101L,
+                0x201L,
+                overworld,
+                PackedArmyEcs.packBlockPos(10, 64, 11),
+                32,
+                1_200L), "garrison binding created");
+        check(garrisons.recordUpkeep(blue, false, 2_400L), "garrison upkeep state changed");
 
         ArmySavedData source = new ArmySavedData(
                 dimensions,
@@ -102,12 +126,16 @@ public final class ArmyPersistenceSelfTest {
                 7L,
                 sourceCommands,
                 logistics,
-                economy);
+                economy,
+                garrisons,
+                sourceRoles,
+                sourceSupplies);
         CompoundTag encoded = source.save(new CompoundTag(), null);
         check(encoded.getInt("SchemaVersion") == ArmyNbtCodec.SCHEMA_VERSION, "schema written");
         check(encoded.getCompound("Armies").getInt("Count") == 2, "army count written");
         check(encoded.getCompound("Units").getInt("Count") == 3, "unit count written");
         check(encoded.getCompound("Commands").getInt("Count") == 2, "command count written");
+        check(encoded.getCompound("Garrisons").getInt("Count") == 1, "garrison count written");
 
         ArmySavedData restored = ArmySavedData.load(binaryRoundTrip(encoded), null);
         check(restored.ecs().armySize() == 2, "army count restored");
@@ -119,6 +147,7 @@ public final class ArmyPersistenceSelfTest {
         check(restored.logistics().size() == 1, "logistics restored");
         check(restored.settlementEconomy().settlementCount() == 2, "settlements restored");
         check(restored.settlementEconomy().shipmentCount() == 1, "shipment WAL restored");
+        check(restored.garrisons().size() == 1, "garrison binding restored");
         check(restored.settlementEconomy().shipmentStatusAt(0)
                         == PackedSettlementEconomyState.SHIPMENT_IN_TRANSIT,
                 "in-transit settlement shipment restored");
@@ -141,11 +170,45 @@ public final class ArmyPersistenceSelfTest {
         check(restored.ecs().armyUnitCount(restoredRed) == 1, "red membership restored");
         check(countUnassigned(restored.ecs()) == 1, "unassigned unit restored");
         int restoredBlueUnit = unitForArmy(restored.ecs(), restoredBlue);
+        PackedUnitRoleState.View roleView = restored.unitRoles().newView();
+        check(restored.unitRoles().read(restoredBlueUnit, roleView), "blue role row restored");
+        check(roleView.roleToken() == 10_001 && roleView.rankToken() == 20_001 && roleView.loadoutToken() == 30_001,
+                "blue role payload restored");
+        check(roleView.troopClass() == PackedUnitRoleState.TROOP_CLASS_REGULAR
+                        && roleView.unpaidCycles() == 0,
+                "blue regular class and paid state restored");
+        check(!restored.unitRoles().isEquipmentDirty(restoredBlueUnit), "blue role dirty cleared persisted");
+        int restoredRedUnit = unitForArmy(restored.ecs(), restoredRed);
+        PackedUnitRoleState.View redRoleView = restored.unitRoles().newView();
+        check(restored.unitRoles().read(restoredRedUnit, redRoleView), "red role row restored");
+        check(redRoleView.roleToken() == 10_002 && redRoleView.rankToken() == 20_002 && redRoleView.loadoutToken() == 30_003,
+                "red role payload restored");
+        check(redRoleView.troopClass() == PackedUnitRoleState.TROOP_CLASS_NOBLE
+                        && redRoleView.unpaidCycles() == 2,
+                "red noble class and unpaid cycles restored");
+        check(restored.unitRoles().isEquipmentDirty(restoredRedUnit), "red role dirtiness restored");
+        check(restored.unitRoles().revision() == sourceRoleRevision, "unit role revision restored");
+        int restoredSupplyRow = restored.armySupplies().findArmy(restoredBlue);
+        check(restoredSupplyRow >= 0, "supply chest army handle remapped");
+        check(restored.armySupplies().dimensionIdAt(restoredSupplyRow) == overworld
+                        && restored.armySupplies().chestPositionAt(restoredSupplyRow)
+                                == PackedArmyEcs.packBlockPos(12, 64, 13),
+                "supply chest payload restored");
+        check(restored.armySupplies().revision() == sourceSupplyRevision,
+                "supply chest revision restored");
         PackedUnitMembership.UuidBits unitIdentity = restored.memberships().newUuidBits();
         check(restored.memberships().read(restoredBlueUnit, unitIdentity), "blue unit identity found");
         check(unitIdentity.most() == 0x1111L && unitIdentity.least() == 0x2222L,
                 "blue MillVillager UUID restored");
         check(restored.controllers().matches(restoredBlue, 0xaaaaL, 0xbbbbL), "controller handle remapped");
+        PackedGarrisonState.View garrisonView = restored.garrisons().newView();
+        check(restored.garrisons().readArmy(restoredBlue, garrisonView), "garrison army handle remapped");
+        check(garrisonView.villageMost() == 0x101L && garrisonView.villageLeast() == 0x201L,
+                "garrison settlement identity restored");
+        check(garrisonView.guardRadius() == 32
+                        && garrisonView.supplyPercent() == 82
+                        && garrisonView.readinessPercent() == 90,
+                "garrison radius and coarse upkeep restored");
 
         PackedFactionState.Cursor factionCursor = restored.factions().newCursor();
         check(factionCursor.advance(), "faction relation cursor restored");
@@ -196,6 +259,17 @@ public final class ArmyPersistenceSelfTest {
         check(secondRestore.ecs().unitSize() == 3, "second round-trip units");
         check(secondRestore.commands().size() == 3, "second round-trip commands");
         check(secondRestore.logistics().size() == 1, "second round-trip logistics");
+        check(secondRestore.garrisons().size() == 1, "second round-trip garrison");
+        int secondBlue = armyByFaction(secondRestore.ecs(), 20);
+        PackedUnitRoleState.View secondRoleView = secondRestore.unitRoles().newView();
+        check(secondBlue != PackedArmyEcs.NO_ARMY
+                        && secondRestore.unitRoles().read(unitForArmy(secondRestore.ecs(), secondBlue), secondRoleView),
+                "second round-trip role remap still resolvable");
+        check(secondRestore.unitRoles().revision() == sourceRoleRevision, "second round-trip role revision parity");
+        int secondSupplyRow = secondRestore.armySupplies().findArmy(secondBlue);
+        check(secondSupplyRow >= 0
+                        && secondRestore.armySupplies().revision() == sourceSupplyRevision,
+                "second round-trip supply binding parity");
         check(secondRestore.settlementEconomy().deterministicHash()
                         == restored.settlementEconomy().deterministicHash(),
                 "second round-trip settlement economy parity");
@@ -207,10 +281,119 @@ public final class ArmyPersistenceSelfTest {
         wrongVersion.putInt("SchemaVersion", ArmyNbtCodec.SCHEMA_VERSION + 1);
         expectIllegalArgument(() -> ArmySavedData.load(wrongVersion, null), "future schema rejected");
 
+        CompoundTag missingRoleRows = empty.save(new CompoundTag(), null);
+        missingRoleRows.putInt("SchemaVersion", 4);
+        CompoundTag roleTag = missingRoleRows.getCompound("UnitRoles");
+        roleTag.putInt("Count", 1);
+        roleTag.putIntArray("UnitRows", new int[]{0});
+        roleTag.putIntArray("RoleTokens", new int[]{10});
+        roleTag.putIntArray("RankTokens", new int[]{20});
+        roleTag.putIntArray("LoadoutTokens", new int[]{30});
+        roleTag.putByteArray("Flags", new byte[]{1});
+        expectIllegalArgument(() -> ArmySavedData.load(missingRoleRows, null),
+                "invalid persisted unit role row rejected");
+
         CompoundTag wrongLength = empty.save(new CompoundTag(), null);
         CompoundTag armies = wrongLength.getCompound("Armies");
         armies.putInt("Count", 1);
         expectIllegalArgument(() -> ArmySavedData.load(wrongLength, null), "column mismatch rejected");
+
+        StableDimensionTable corruptDimensions = new StableDimensionTable();
+        int corruptOverworld = corruptDimensions.intern(Level.OVERWORLD.location());
+        PackedArmyEcs corruptEcs = new PackedArmyEcs(1, 1);
+        int corruptArmy = corruptEcs.createArmy(
+                1, 5, 0, corruptOverworld, PackedArmyEcs.packBlockPos(0, 64, 0));
+        int corruptUnit = corruptEcs.createUnit(
+                corruptArmy, 6, 7, PackedArmyEcs.packBlockPos(1, 64, 1));
+        PackedUnitRoleState corruptRoles = new PackedUnitRoleState();
+        corruptRoles.assign(corruptUnit, 11, 12, 13);
+        PackedArmySupplyState corruptSupplies = new PackedArmySupplyState();
+        corruptSupplies.assign(corruptArmy, corruptOverworld, PackedArmyEcs.packBlockPos(2, 64, 2));
+        PackedGarrisonState corruptGarrisons = new PackedGarrisonState(1);
+        corruptGarrisons.assign(
+                corruptArmy, 1L, 2L, corruptOverworld,
+                PackedArmyEcs.packBlockPos(0, 64, 0), 32, 100L);
+        ArmySavedData corruptSource = new ArmySavedData(
+                corruptDimensions,
+                new StableItemTable(),
+                new PackedFactionState(),
+                corruptEcs,
+                new PackedUnitMembership(),
+                new PackedArmyControllers(),
+                1L,
+                new PackedCommandState(),
+                new PackedLogisticsState(),
+                new PackedSettlementEconomyState(),
+                corruptGarrisons,
+                corruptRoles,
+                corruptSupplies);
+        CompoundTag invalidGarrison = corruptSource.save(new CompoundTag(), null);
+        invalidGarrison.getCompound("Garrisons").putIntArray("GuardRadii", new int[] {0});
+        expectIllegalArgument(() -> ArmySavedData.load(invalidGarrison, null),
+                "invalid persisted garrison radius rejected");
+        CompoundTag invalidStatus = corruptSource.save(new CompoundTag(), null);
+        invalidStatus.getCompound("Garrisons").putByteArray("Statuses", new byte[] {9});
+        expectIllegalArgument(() -> ArmySavedData.load(invalidStatus, null),
+                "invalid persisted garrison status rejected");
+        CompoundTag duplicateRoleRows = corruptSource.save(new CompoundTag(), null);
+        CompoundTag badRoleRows = duplicateRoleRows.getCompound("UnitRoles");
+        badRoleRows.putInt("Count", 2);
+        badRoleRows.putIntArray("RoleTokens", new int[] {1, 2});
+        badRoleRows.putIntArray("RankTokens", new int[] {3, 4});
+        badRoleRows.putIntArray("LoadoutTokens", new int[] {5, 6});
+        badRoleRows.putIntArray("UnitRows", new int[] {0, 0});
+        badRoleRows.putByteArray("Flags", new byte[] {1, 1});
+        expectIllegalArgument(() -> ArmySavedData.load(duplicateRoleRows, null),
+                "duplicate persisted unit role row rejected");
+        CompoundTag invalidRoleFlags = corruptSource.save(new CompoundTag(), null);
+        invalidRoleFlags.getCompound("UnitRoles").putByteArray("Flags", new byte[] {2});
+        expectIllegalArgument(() -> ArmySavedData.load(invalidRoleFlags, null),
+                "unknown persisted unit role flags rejected");
+        CompoundTag invalidRoleLength = corruptSource.save(new CompoundTag(), null);
+        invalidRoleLength.getCompound("UnitRoles").putIntArray("RankTokens", new int[0]);
+        expectIllegalArgument(() -> ArmySavedData.load(invalidRoleLength, null),
+                "persisted unit role column length mismatch rejected");
+        CompoundTag invalidRoleRevision = corruptSource.save(new CompoundTag(), null);
+        invalidRoleRevision.getCompound("UnitRoles").putLong("Revision", 0L);
+        expectIllegalArgument(() -> ArmySavedData.load(invalidRoleRevision, null),
+                "persisted unit role revision below row count rejected");
+        CompoundTag invalidSupplyLength = corruptSource.save(new CompoundTag(), null);
+        invalidSupplyLength.getCompound("ArmySupplies").putIntArray("Dimensions", new int[0]);
+        expectIllegalArgument(() -> ArmySavedData.load(invalidSupplyLength, null),
+                "persisted supply column length mismatch rejected");
+        CompoundTag invalidSupplyRevision = corruptSource.save(new CompoundTag(), null);
+        invalidSupplyRevision.getCompound("ArmySupplies").putLong("Revision", 0L);
+        expectIllegalArgument(() -> ArmySavedData.load(invalidSupplyRevision, null),
+                "persisted supply revision below row count rejected");
+        CompoundTag duplicateSupply = corruptSource.save(new CompoundTag(), null);
+        CompoundTag duplicateSupplyTag = duplicateSupply.getCompound("ArmySupplies");
+        duplicateSupplyTag.putInt("Count", 2);
+        duplicateSupplyTag.putIntArray("ArmyRows", new int[] {0, 0});
+        duplicateSupplyTag.putIntArray("Dimensions", new int[] {0, 0});
+        duplicateSupplyTag.putLongArray("ChestPositions", new long[] {1L, 2L});
+        duplicateSupplyTag.putLong("Revision", 2L);
+        expectIllegalArgument(() -> ArmySavedData.load(duplicateSupply, null),
+                "duplicate persisted supply army row rejected");
+
+        CompoundTag schemaFour = corruptSource.save(new CompoundTag(), null);
+        schemaFour.putInt("SchemaVersion", 4);
+        schemaFour.remove("ArmySupplies");
+        ArmySavedData migratedFour = ArmySavedData.load(schemaFour, null);
+        check(migratedFour.armySupplies().size() == 0,
+                "schema-4 migrates to an empty army supply store");
+
+        CompoundTag schemaThree = corruptSource.save(new CompoundTag(), null);
+        schemaThree.putInt("SchemaVersion", 3);
+        schemaThree.remove("UnitRoles");
+        ArmySavedData migratedThree = ArmySavedData.load(schemaThree, null);
+        check(migratedThree.unitRoles().size() == 0 && migratedThree.unitRoles().revision() == 0L,
+                "schema-3 migrates to an empty unit role store");
+        CompoundTag schemaTwo = corruptSource.save(new CompoundTag(), null);
+        schemaTwo.putInt("SchemaVersion", 2);
+        schemaTwo.remove("UnitRoles");
+        ArmySavedData migratedTwo = ArmySavedData.load(schemaTwo, null);
+        check(migratedTwo.unitRoles().size() == 0,
+                "schema-2 remains supported and migrates to an empty unit role store");
 
         PackedArmyEcs legacyEcs = new PackedArmyEcs(1, 0);
         legacyEcs.createArmy(1, 1, 0, 0, PackedArmyEcs.packBlockPos(1, 64, 1));

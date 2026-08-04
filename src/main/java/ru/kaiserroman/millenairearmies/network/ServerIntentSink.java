@@ -16,9 +16,19 @@ public interface ServerIntentSink {
 
     void recruitUnits(ServerPlayer player, RecruitUnitsIntent intent);
 
+    void hireRecruit(ServerPlayer player, HireRecruitIntent intent);
+
     void issueOrder(ServerPlayer player, IssueOrderIntent intent);
 
     void setFormation(ServerPlayer player, SetFormationIntent intent);
+
+    void setTactical(ServerPlayer player, SetTacticalIntent intent);
+
+    void setSupplyChest(ServerPlayer player, SetSupplyChestIntent intent);
+
+    void setUnitLoadout(ServerPlayer player, SetUnitLoadoutIntent intent);
+
+    void setGarrison(ServerPlayer player, SetGarrisonIntent intent);
 
     void realmAction(ServerPlayer player, RealmActionIntent intent);
 }

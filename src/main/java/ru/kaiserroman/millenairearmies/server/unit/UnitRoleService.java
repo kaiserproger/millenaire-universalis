@@ -23,6 +23,7 @@ public final class UnitRoleService {
     private final UnitDescriptorCatalog catalog;
     private final PackedUnitRoleState state;
     private final PackedUnitMembership.Cursor membershipCursor;
+    private final PackedUnitMembership.UuidBits unitUuidBits;
     private final PackedUnitRoleState.View roleView;
     private final ProjectionResult projectionResult = new ProjectionResult();
     private long observedCatalogGeneration;
@@ -35,13 +36,15 @@ public final class UnitRoleService {
             PackedUnitMembership memberships,
             MillenaireEntityBridge entityBridge,
             UnitDescriptorCatalog catalog,
+            PackedUnitRoleState state,
             int expectedUnits) {
         this.memberships = Objects.requireNonNull(memberships, "memberships");
         this.entityBridge = Objects.requireNonNull(entityBridge, "entityBridge");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
-        this.state = new PackedUnitRoleState();
+        this.state = Objects.requireNonNull(state, "state");
         this.state.reserve(expectedUnits);
         this.membershipCursor = memberships.newCursor();
+        this.unitUuidBits = memberships.newUuidBits();
         this.roleView = state.newView();
         this.observedCatalogGeneration = catalog.generation();
     }
@@ -82,6 +85,21 @@ public final class UnitRoleService {
     /** Allocation-free hot API for already validated tokens. */
     public boolean assignTokens(int unitHandle, int roleToken, int rankToken, int loadoutToken) {
         return state.assign(unitHandle, roleToken, rankToken, loadoutToken);
+    }
+
+    /** Persists the economic/military class without requiring a datapack role descriptor. */
+    public boolean assignTroopClass(int unitHandle, byte troopClass) {
+        return state.assignTroopClass(unitHandle, troopClass);
+    }
+
+    /** Returns whether this unit already has a role-state row. */
+    public boolean hasAssignment(int unitHandle) {
+        return state.read(unitHandle, roleView);
+    }
+
+    /** Allocation-free hot API to mutate only the loadout token while preserving role/rank. */
+    public boolean assignLoadoutOnly(int unitHandle, int loadoutToken) {
+        return state.assignLoadoutOnly(unitHandle, loadoutToken);
     }
 
     public boolean remove(int unitHandle) {
@@ -156,6 +174,56 @@ public final class UnitRoleService {
         return projectionResult;
     }
 
+    public ProjectionResult projectUnitLoadout(MinecraftServer server, int unitHandle) {
+        Objects.requireNonNull(server, "server");
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Army equipment projection must run on the server thread");
+        }
+        projectionResult.reset();
+        projectionResult.scanned = 1;
+        if (!state.read(unitHandle, roleView)) {
+            projectionResult.unassigned++;
+            return projectionResult;
+        }
+        if ((roleView.flags() & PackedUnitRoleState.FLAG_EQUIPMENT_DIRTY) == 0) {
+            projectionResult.clean++;
+            return projectionResult;
+        }
+        if (!memberships.read(unitHandle, unitUuidBits)) {
+            projectionResult.unassigned++;
+            return projectionResult;
+        }
+        MillVillager villager = entityBridge.findLoaded(unitUuidBits.most(), unitUuidBits.least());
+        if (villager == null || villager.isRemoved()) {
+            projectionResult.unloaded++;
+            return projectionResult;
+        }
+
+        UnitRoleDescriptor role = roleView.roleToken() == 0 ? null : catalog.role(roleView.roleToken());
+        if (roleView.roleToken() != 0 && role == null) {
+            projectionResult.missingDescriptors++;
+            return projectionResult;
+        }
+        int loadoutToken = roleView.loadoutToken();
+        if (loadoutToken == 0 && role != null) {
+            loadoutToken = role.defaultLoadoutToken();
+        }
+        UnitLoadoutDescriptor loadout = loadoutToken == 0 ? null : catalog.loadout(loadoutToken);
+        if (loadout == null && loadoutToken != 0) {
+            projectionResult.missingDescriptors++;
+            return projectionResult;
+        }
+        if (loadout == null) {
+            state.markEquipmentProjected(unitHandle);
+            projectionResult.projected++;
+            return projectionResult;
+        }
+        projectLoadout(villager, loadout, projectionResult);
+        state.markEquipmentProjected(unitHandle);
+        projectionResult.projected++;
+        return projectionResult;
+    }
+
     private static void projectLoadout(
             MillVillager villager,
             UnitLoadoutDescriptor loadout,
@@ -163,7 +231,14 @@ public final class UnitRoleService {
         for (int slotIndex = 0; slotIndex < UnitLoadoutDescriptor.SLOT_COUNT; slotIndex++) {
             Item target = loadout.resolvedItem(slotIndex);
             if (target == null) {
-                if (loadout.candidates(slotIndex).length != 0) {
+                if (loadout.candidates(slotIndex).length == 0) {
+                    EquipmentSlot slot = UnitLoadoutDescriptor.slot(slotIndex);
+                    ItemStack current = villager.getItemBySlot(slot);
+                    if (!current.isEmpty()) {
+                        villager.setItemSlot(slot, ItemStack.EMPTY);
+                        result.changedSlots++;
+                    }
+                } else {
                     result.unresolvedSlots++;
                 }
                 continue;

@@ -1,0 +1,67 @@
+[06:34:26] [Server thread/INFO] [ru.ka.mi.li.ArmyLifecycleService/]: [BANNEROK_ARMIES_WORKER_STATUS] requested=0 active=0 status=BASELINE reason=no_profiled_pure_runtime_kernel
+[06:34:28] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"begin","owner":"armyowner","foreign":"armyforeign","phase":"DISCOVER","resumed":false}
+[06:34:29] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"controlled_fixture_created","type":"millenaire:byzantines/controlled","center":"0, -60, 0","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"townhall_seeded","emeralds":"64","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"strategic_supplies_seeded","village":"62e51c80-4fa3-46ea-a556-014af1a85aa5","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"settlement_and_players","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"settlement_owner_and_resources","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies raise 3","message":"Raised army 1048576 with 3 fighter(s); charged 28 emerald(s) from the town hall","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"controlled_army_create","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"recruit_membership","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"army_dimension_persisted","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 move 29 -61 20","message":"Army 1048576 order: move","phase":"DISCOVER","resumed":false}
+[06:34:39] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"army_raised_move_issued","army":"1048576","faction":"932348820","target":"29, -61, 20","phase":"MOVE","resumed":false}
+[06:34:40] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"move_physical_progress","phase":"MOVE","resumed":false}
+[06:34:40] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 rally 18 -61 32","message":"Army 1048576 order: rally","phase":"MOVE","resumed":false}
+[06:34:40] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"rally_issued","target":"18, -61, 32","phase":"RALLY","resumed":false}
+[06:34:40] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"rally_physical_progress","phase":"RALLY","resumed":false}
+[06:34:40] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"battle_preparation_started","phase":"BATTLE_PREP","resumed":false}
+[06:34:41] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"enemy_fixture_created","type":"millenaire:indian/controlled","center":"212, -60, 20","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"townhall_seeded","emeralds":"64","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"strategic_supplies_seeded","village":"50139552-c58b-4121-979b-7c11a8a8481b","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies raise 3","message":"Raised army 1048577 with 3 fighter(s); charged 28 emerald(s) from the town hall","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 attack 129 -60 29","message":"Army 1048576 order: attack","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048577 attack 129 -60 29","message":"Army 1048577 order: attack","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"opposing_army_created","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"bidirectional_hostility_configured","phase":"BATTLE_PREP","resumed":false}
+[06:34:51] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"battle_attack_issued","ownerArmy":"1048576","enemyArmy":"1048577","target":"129, -60, 29","phase":"BATTLE","resumed":false}
+[06:35:26] [Server thread/INFO] [ru.ka.mi.se.ex.ArmyOrderExecutionBridge/]: [BANNEROK_ARMY_ORDER_EXECUTION] reason=periodic accepted=6 executing=12 arrived=3 blocked=0 tracked_units=6
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"battle_owner_target_assignment","phase":"BATTLE","resumed":false}
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"battle_enemy_target_assignment","phase":"BATTLE","resumed":false}
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"battle_physical_damage","phase":"BATTLE","resumed":false}
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 hold","message":"Army 1048576 order: hold","phase":"BATTLE","resumed":false}
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048577 hold","message":"Army 1048577 order: hold","phase":"BATTLE","resumed":false}
+[06:35:34] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"battle_physical_combat_observed","phase":"HOLD","resumed":false}
+[06:35:37] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"hold_state","phase":"HOLD","resumed":false}
+[06:35:37] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 logistics 264 -60 16","message":"Army 1048576 order: logistics","phase":"HOLD","resumed":false}
+[06:35:37] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"logistics_issued","target":"264, -60, 16","phase":"LOGISTICS","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"logistics_physical_progress","phase":"LOGISTICS","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"unload_requested","chunk":"6,1","phase":"UNLOAD","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"chunk_unload","phase":"UNLOAD","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"reload_requested","phase":"RELOAD","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"chunk_reload_membership_order","phase":"RELOAD","resumed":false}
+[06:35:38] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"pre_restart_pass","army":"1048576","members":"3","phase":"READY_RESTART","resumed":false}
+[06:35:44] [Server thread/INFO] [ru.ka.mi.in.mi.SimulationBattleImpactAdapter/]: [BANNEROK_SIMULATION_BATTLE_IMPACTS] processed=4 applied=0 ignored=4 rejected=0 dropped=0
+[06:35:44] [Server thread/INFO] [ru.ka.mi.se.ex.ArmyOrderExecutionBridge/]: [BANNEROK_ARMY_ORDER_EXECUTION] reason=stop accepted=9 executing=18 arrived=3 blocked=0 tracked_units=6
+[06:35:44] [Server thread/INFO] [ru.ka.mi.se.re.FeudalLevyService/]: [BANNEROK_FEUDAL_LEVY_METRICS] answered=0 refused=0 rebellions=0 raised_units=0
+[06:35:44] [Server thread/INFO] [ru.ka.mi.se.re.CanonicalRealmDiplomacyService/]: [BANNEROK_CANONICAL_DIPLOMACY_METRICS] relations=0 dependencies=0 snapshots=1 evaluated=0 status_changes=0 wars=0 blocked_expansion_wars=0 truces=0 battle_outcomes=0 captured_settlements=0 annexed_realms=0 subjugated_realms=0 liberated_realms=0 skipped_legacy_captures=0 rejected_captures=0 dropped_candidates=0 pending=0 last_work=0
+[06:35:44] [Server thread/INFO] [ru.ka.mi.in.mi.FeudalLeaderProjectionService/]: [BANNEROK_FEUDAL_LEADER_METRICS] projected=0 removed=0 equipped=0 mounted=0 safe_mount_misses=0 noble_classifications=0
+[06:35:44] [Server thread/INFO] [ru.ka.mi.li.ArmyLifecycleService/]: [BANNEROK_CANONICAL_REALM_METRICS] realms=0 members=0 subjects=0 metadata=0 mirror_reconciles=10 primitive_bytes=3648
+[06:36:03] [Server thread/INFO] [ru.ka.mi.li.ArmyLifecycleService/]: [BANNEROK_ARMIES_WORKER_STATUS] requested=0 active=0 status=BASELINE reason=no_profiled_pure_runtime_kernel
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"restart_persistence","phase":"IDLE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"restart_dimension_persistence","phase":"IDLE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"resume","army":"1048576","members":"3","phase":"RESUME_LOAD","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"resume_entity_loaded","uuid":"36df2a5a-ada6-4fb1-bb1b-82b5e3a09173","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"restart_execution_continuation","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 hold","message":"You are neither this army's controller nor an operator","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"foreign_player_denied","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"malformed_payload_denied","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"command_feedback","command":"millarmies order 1048576 hold","message":"Army 1048576 order: hold","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"assert_pass","name":"owner_after_restart_allowed","phase":"RESUME_CONTINUE","resumed":true}
+[06:36:06] [Server thread/WARN] [ru.ka.ba.ArmyFullCycleController/]: [BANNEROK_ARMY_QA] {"event":"full_cycle_pass","army":"1048576","assertions":"6","phase":"COMPLETE","resumed":true}
+[06:36:11] [Server thread/INFO] [ru.ka.mi.in.mi.SimulationBattleImpactAdapter/]: [BANNEROK_SIMULATION_BATTLE_IMPACTS] processed=0 applied=0 ignored=0 rejected=0 dropped=0
+[06:36:11] [Server thread/INFO] [ru.ka.mi.se.ex.ArmyOrderExecutionBridge/]: [BANNEROK_ARMY_ORDER_EXECUTION] reason=stop accepted=1 executing=3 arrived=0 blocked=0 tracked_units=6
+[06:36:11] [Server thread/INFO] [ru.ka.mi.se.re.FeudalLevyService/]: [BANNEROK_FEUDAL_LEVY_METRICS] answered=0 refused=0 rebellions=0 raised_units=0
+[06:36:11] [Server thread/INFO] [ru.ka.mi.se.re.CanonicalRealmDiplomacyService/]: [BANNEROK_CANONICAL_DIPLOMACY_METRICS] relations=0 dependencies=0 snapshots=1 evaluated=0 status_changes=0 wars=0 blocked_expansion_wars=0 truces=0 battle_outcomes=0 captured_settlements=0 annexed_realms=0 subjugated_realms=0 liberated_realms=0 skipped_legacy_captures=0 rejected_captures=0 dropped_candidates=0 pending=0 last_work=0
+[06:36:11] [Server thread/INFO] [ru.ka.mi.in.mi.FeudalLeaderProjectionService/]: [BANNEROK_FEUDAL_LEADER_METRICS] projected=0 removed=0 equipped=0 mounted=0 safe_mount_misses=0 noble_classifications=0
+[06:36:11] [Server thread/INFO] [ru.ka.mi.li.ArmyLifecycleService/]: [BANNEROK_CANONICAL_REALM_METRICS] realms=0 members=0 subjects=0 metadata=0 mirror_reconciles=1 primitive_bytes=3648

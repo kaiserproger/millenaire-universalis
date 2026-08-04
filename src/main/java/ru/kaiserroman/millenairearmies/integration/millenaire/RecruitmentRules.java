@@ -6,6 +6,11 @@ import org.millenaire.ReputationConstants;
 final class RecruitmentRules {
     private RecruitmentRules() {}
 
+    /** Millenaire represents adults with the negative child-size sentinel. */
+    static boolean adult(boolean villagerChild, int recordChildSize) {
+        return !villagerChild && recordChildSize < 0;
+    }
+
     static long settlementAccess(boolean playerControlled, boolean controlledBy, int combinedReputation) {
         if (!playerControlled || !controlledBy) {
             return MillenaireRecruitmentService.SETTLEMENT_NOT_CONTROLLED;

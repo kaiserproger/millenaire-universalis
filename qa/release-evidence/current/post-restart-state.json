@@ -1,0 +1,7 @@
+{
+  "schema": "bannerok.army-full-cycle.v1",
+  "status": "pass",
+  "phase": "COMPLETE",
+  "armyHandle": "1048576",
+  "assertions": ["restart_persistence","restart_dimension_persistence","restart_execution_continuation","foreign_player_denied","malformed_payload_denied","owner_after_restart_allowed"]
+}

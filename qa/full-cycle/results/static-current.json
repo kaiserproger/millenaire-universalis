@@ -1,0 +1,20 @@
+{
+  "checks": {
+    "adultSemantics": true,
+    "commandSurface": true,
+    "externalHarnessChecked": false,
+    "jsonValid": true,
+    "physicalCombat": true,
+    "placeholderFree": true,
+    "qaFailClosed": true,
+    "recruitmentPaths": true,
+    "releaseGameplayFlow": true,
+    "resourcesComplete": true,
+    "restartExecution": true,
+    "siegeBoundary": true,
+    "translationsComplete": true
+  },
+  "failure": null,
+  "schema": "bannerok.army-full-cycle-static.v3",
+  "status": "pass"
+}

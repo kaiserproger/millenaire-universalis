@@ -7,3 +7,10 @@ run/
 vendor/*.jar
 *.class
 hs_err_pid*
+*.fifo
+*.pid
+qa/visual/
+qa/world-development/evidence/
+qa/full-cycle/control/
+qa/full-cycle/runs/
+qa/full-cycle/fixtures/*.jar

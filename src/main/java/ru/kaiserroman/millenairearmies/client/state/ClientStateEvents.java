@@ -28,6 +28,8 @@ public final class ClientStateEvents {
         ClientFactionMetadataState.INSTANCE.reset();
         ClientArmyRosterState.INSTANCE.reset();
         ClientRealmState.INSTANCE.reset();
+        ClientRealmDiplomacyState.INSTANCE.reset();
+        ClientGarrisonState.INSTANCE.clear();
         ClientArmyState.INSTANCE.listener(null);
         ClientFactionMetadataState.INSTANCE.listener(null);
         ClientArmyRosterState.INSTANCE.listener(null);

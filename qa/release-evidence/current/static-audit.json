@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "externalHarnessChecked": true,
+    "jsonValid": true,
+    "placeholderFree": true,
+    "qaFailClosed": true,
+    "releaseGameplayFlow": true,
+    "resourcesComplete": true,
+    "translationsComplete": true
+  },
+  "failure": null,
+  "schema": "bannerok.army-full-cycle-static.v1",
+  "status": "pass"
+}

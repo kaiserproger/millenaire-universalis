@@ -1,0 +1,91 @@
+{
+  "schema": "bannerok.millenaire-realm-simulation-readiness.v1",
+  "releaseRun": "final9-20260805T071000Z",
+  "status": "ready-with-scoped-runtime-evidence",
+  "modules": {
+    "realm": {
+      "status": "standalone-build-pass",
+      "coordinate": "ru.kaiserroman.millenaire:millenaire-realm:1.0.0",
+      "dependencies": ["java"],
+      "verification": "RealmCoreSelfTest: OK"
+    },
+    "simulation": {
+      "status": "standalone-build-pass",
+      "coordinate": "ru.kaiserroman.millenaire:millenaire-simulation:1.0.0",
+      "dependencies": ["java"],
+      "verification": "WorldSimulationSelfTest: OK"
+    },
+    "armies": {
+      "status": "dedicated-runtime-pass",
+      "verification": "65 Gradle verification tasks plus final9 dedicated two-lifecycle run"
+    }
+  },
+  "gameplay": [
+    {
+      "id": "dynamic-inactive-world",
+      "status": "deterministic-pass",
+      "evidence": "Simulation catch-up, historical settlement lifecycle, demography, productivity, prices, regional shocks and persisted state self-tests; chunk unload/reload also passed in dedicated runtime",
+      "runtimeScope": "The final dedicated run proves unload/reload and persistence, not a multi-year inactive settlement history"
+    },
+    {
+      "id": "reputation-4096-hire",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Production recruitment uses Millenaire ReputationConstants.HIRE_REPUTATION_THRESHOLD=4096; network/UI and recruitment rules cover the exact threshold",
+      "runtimeScope": "The final dedicated run raises settlement levies; it does not execute the one-day paid hire path"
+    },
+    {
+      "id": "nearby-hostile-mobs",
+      "status": "native-integration-present",
+      "evidence": "Paid hired fighters retain Millenaire HiredEscortGoal, which acquires nearby Monster targets and performs physical combat; Armies FOLLOW yields to an existing attack target",
+      "runtimeScope": "The final dedicated run validates army-vs-army physical combat, not a spawned vanilla monster"
+    },
+    {
+      "id": "individual-autonomous-units",
+      "status": "runtime-pass",
+      "evidence": "Three real MillVillager entities per side received individual targets, moved independently and dealt physical damage"
+    },
+    {
+      "id": "physical-siege-and-capture",
+      "status": "implemented-deterministic-pass",
+      "evidence": "PhysicalSiegeCoordinator, real defender contact, secured-event confirmation, Realm capture/subjugation/liberation and persistence self-tests",
+      "runtimeScope": "The final dedicated run validates field combat; it does not complete a settlement siege and ownership transfer"
+    },
+    {
+      "id": "foreign-settlement-block-protection",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Foreign blocks default to 20 permille speed, critical infrastructure is denied, and only a slowed perimeter breach opens during a fresh physical siege",
+      "runtimeScope": "Policy and physical-siege freshness are self-tested; a human mining session is not part of final9"
+    },
+    {
+      "id": "realm-foundation-subordination-tribute",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Player/mixed/NPC Realm creation, membership, taxation, tribute, dependencies, capture, subjugation and liberation self-tests"
+    },
+    {
+      "id": "secession-and-reconquest-pressure",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Autonomous successor-state and stateless secession self-tests plus physical hostility/capture integration"
+    },
+    {
+      "id": "army-upkeep",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Recurring Millenaire-denier upkeep, persisted missed cycles, forced HOLD and desertion policy self-tests"
+    },
+    {
+      "id": "regulars-cost-more-than-levies",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Default per-cycle tariffs levy=1, regular=5, noble=12 deniers; recruitment persists troop classes"
+    },
+    {
+      "id": "feudal-leaders-and-levies",
+      "status": "implemented-deterministic-pass",
+      "evidence": "Real chief projection, permanent combat modifiers, superior equipment, safe existing-horse assignment, noble upkeep class, answer/refuse/rebel levy policy and transactional army raising",
+      "runtimeScope": "The final dedicated run does not stage a feudal levy call or mounted chief"
+    }
+  ],
+  "handoff": {
+    "requestedModel": "gpt-5.3-codex-spark",
+    "status": "not-run-quota-exhausted",
+    "reason": "Codex handoff credits were unavailable until 2026-08-08; direct codex exec was not used"
+  }
+}

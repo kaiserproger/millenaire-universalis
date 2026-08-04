@@ -20,6 +20,7 @@ public final class SettlementEconomyEngineSelfTest {
         tradeEquilibrium();
         terminalWalRowsAreReused();
         shortagesBlockRecruitmentAndArmySupply();
+        garrisonUpkeepIsSettlementLocalAndAtomic();
         strategicLogisticsDispatchDebitsSettlement();
         hundredSettlementMemoryAndAllocationBudget();
         System.out.println("Settlement economy self-test passed");
@@ -146,6 +147,37 @@ public final class SettlementEconomyEngineSelfTest {
         check(scenario.state.stockAt(row, SettlementEconomyEngine.IRON) == 99, "iron kit debited");
         check(scenario.engine.tryDebit(1, 0, foodKey, 20), "surplus supplies army");
         check(scenario.state.stockAt(row, SettlementEconomyEngine.FOOD) == 72, "army debit committed");
+    }
+
+    private static void garrisonUpkeepIsSettlementLocalAndAtomic() {
+        Scenario scenario = new Scenario(10, 4, 4, 1, 16);
+        int garrison = scenario.settlement(81L, 810L, 0, 0);
+        int remote = scenario.settlement(82L, 820L, 32, 0);
+        scenario.rates(garrison, SettlementEconomyEngine.FOOD, 10, 0, 0);
+        scenario.rates(garrison, SettlementEconomyEngine.ARROWS, 10, 0, 0);
+        scenario.rates(remote, SettlementEconomyEngine.FOOD, 10, 0, 0);
+        scenario.rates(remote, SettlementEconomyEngine.ARROWS, 10, 0, 0);
+        scenario.observeAll(garrison, 0);
+        scenario.observeAll(remote, 100);
+        scenario.engine.observePhysicalStock(garrison, SettlementEconomyEngine.FOOD, 50);
+        scenario.engine.observePhysicalStock(garrison, SettlementEconomyEngine.ARROWS, 20);
+        scenario.engine.projectionReady();
+
+        check(!scenario.engine.tryConsumeGarrisonUpkeep(81L, 810L, 20, 11),
+                "insufficient local arrows reject the entire upkeep debit");
+        check(scenario.state.stockAt(garrison, SettlementEconomyEngine.FOOD) == 50
+                        && scenario.state.stockAt(garrison, SettlementEconomyEngine.ARROWS) == 20,
+                "failed garrison upkeep is atomic");
+        check(scenario.state.stockAt(remote, SettlementEconomyEngine.FOOD) == 100,
+                "remote same-faction settlement cannot silently feed the garrison");
+
+        check(scenario.engine.tryConsumeGarrisonUpkeep(81L, 810L, 20, 10),
+                "local surplus funds one upkeep interval");
+        check(scenario.state.stockAt(garrison, SettlementEconomyEngine.FOOD) == 30
+                        && scenario.state.stockAt(garrison, SettlementEconomyEngine.ARROWS) == 10,
+                "successful debit preserves exact settlement reserves");
+        check(scenario.engine.settlementSupplyPercent(81L, 810L) >= 0,
+                "bound settlement exposes a coarse supply percentage");
     }
 
     private static void terminalWalRowsAreReused() {

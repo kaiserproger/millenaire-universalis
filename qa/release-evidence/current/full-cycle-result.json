@@ -1,0 +1,31 @@
+{
+  "artifacts": {
+    "modsSha256": "876266489cf33b8aa0920eaa8f8b73187f27a8aeb3209e6d6f665fa71e7b59e7",
+    "preRestartStateSha256": "b2a0ddbc1e8f012309d971a4a748b9b335f32fc8180fcff4af3a02fa6741f352",
+    "runId": "final9-20260805T071000Z",
+    "serverLogSha256": "4fe9f2c90087d5707a2cd36e0d54f67528689405fc5f1504c6f0b18d5e5cca99",
+    "stateSha256": "c7bb5e4ce9e2332a00884691f771ee46fb3d1ecb2b647133868161b794850b55"
+  },
+  "checks": {
+    "battlePhysicalCombat": true,
+    "chunkUnloadReload": true,
+    "controlledArmy": true,
+    "dedicatedBoot": true,
+    "dimensionPersisted": true,
+    "foreignDenied": true,
+    "hold": true,
+    "logistics": true,
+    "malformedDenied": true,
+    "move": true,
+    "noFatalLog": true,
+    "rally": true,
+    "recruitment": true,
+    "resources": true,
+    "restartPersistence": true,
+    "settlement": true,
+    "settlementResources": true
+  },
+  "failure": null,
+  "schema": "bannerok.army-full-cycle-run.v1",
+  "status": "pass"
+}

@@ -141,6 +141,7 @@ public final class ArmyClientEvents {
             ArmyClientState.clear();
             ArmyTargetSelection.clear();
             ArmyCommandHud.deactivate();
+            MillenaireCommandScreen.resetNavigationState();
         }
     }
 }

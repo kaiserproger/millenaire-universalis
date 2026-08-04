@@ -3,7 +3,10 @@ package ru.kaiserroman.millenairearmies.server.execution;
 import java.util.UUID;
 import org.millenaire.village.Village;
 
-/** Authority boundary between physical battlefield victory and player-founded realm ownership. */
+/**
+ * Optional integration boundary reserved for the external Realm + Simulation modules.
+ * Millenaire Armies does not install or invoke it while executing recruitment, commands or combat.
+ */
 public interface RealmCapturePolicy {
     RealmCapturePolicy ALLOW_ALL = new RealmCapturePolicy() {
         @Override

@@ -12,6 +12,12 @@ import java.util.Arrays;
 public final class PackedUnitRoleState {
     public static final byte FLAG_EQUIPMENT_DIRTY = 1;
 
+    public static final byte TROOP_CLASS_UNCLASSIFIED = 0;
+    public static final byte TROOP_CLASS_LEVY = 1;
+    public static final byte TROOP_CLASS_REGULAR = 2;
+    public static final byte TROOP_CLASS_NOBLE = 3;
+    public static final int MAX_UNPAID_CYCLES = 127;
+
     private static final int MIN_CAPACITY = 16;
     private static final float INDEX_LOAD = 0.65F;
 
@@ -22,6 +28,8 @@ public final class PackedUnitRoleState {
     private int[] roleTokens = new int[0];
     private int[] rankTokens = new int[0];
     private int[] loadoutTokens = new int[0];
+    private byte[] troopClasses = new byte[0];
+    private byte[] unpaidCycles = new byte[0];
     private byte[] flags = new byte[0];
 
     private int[] indexKeys = new int[0];
@@ -39,7 +47,7 @@ public final class PackedUnitRoleState {
 
     /** Primitive array payload, excluding small JVM headers and the service/catalog objects. */
     public long estimatedPrimitiveBytes() {
-        return (long) unitHandles.length * (Integer.BYTES * 4L + Byte.BYTES)
+        return (long) unitHandles.length * (Integer.BYTES * 4L + Byte.BYTES * 3L)
                 + (long) indexKeys.length * Integer.BYTES * 2L;
     }
 
@@ -62,15 +70,31 @@ public final class PackedUnitRoleState {
     public boolean assign(int unitHandle, int roleToken, int rankToken, int loadoutToken) {
         requireHandle(unitHandle);
         int row = findRow(unitHandle);
+        byte troopClass = row < 0 ? TROOP_CLASS_LEVY : troopClasses[row];
+        return assign(unitHandle, roleToken, rankToken, loadoutToken, troopClass);
+    }
+
+    /** Inserts or updates role data together with an explicit persisted military class. */
+    public boolean assign(
+            int unitHandle,
+            int roleToken,
+            int rankToken,
+            int loadoutToken,
+            byte troopClass) {
+        requireHandle(unitHandle);
+        troopClass = normalizeTroopClass(troopClass);
+        int row = findRow(unitHandle);
         if (row >= 0) {
             if (roleTokens[row] == roleToken
                     && rankTokens[row] == rankToken
-                    && loadoutTokens[row] == loadoutToken) {
+                    && loadoutTokens[row] == loadoutToken
+                    && troopClasses[row] == troopClass) {
                 return false;
             }
             roleTokens[row] = roleToken;
             rankTokens[row] = rankToken;
             loadoutTokens[row] = loadoutToken;
+            troopClasses[row] = troopClass;
             flags[row] |= FLAG_EQUIPMENT_DIRTY;
             revision++;
             return true;
@@ -83,11 +107,126 @@ public final class PackedUnitRoleState {
         roleTokens[row] = roleToken;
         rankTokens[row] = rankToken;
         loadoutTokens[row] = loadoutToken;
+        troopClasses[row] = troopClass;
+        unpaidCycles[row] = 0;
         flags[row] = FLAG_EQUIPMENT_DIRTY;
         putIndex(unitHandle, row);
         structuralVersion++;
         revision++;
         return true;
+    }
+
+    /** Updates only the loadout token for an existing role assignment. */
+    public boolean assignLoadoutOnly(int unitHandle, int loadoutToken) {
+        requireHandle(unitHandle);
+        int row = findRow(unitHandle);
+        if (row < 0 || loadoutTokens[row] == loadoutToken) {
+            return false;
+        }
+        loadoutTokens[row] = loadoutToken;
+        flags[row] |= FLAG_EQUIPMENT_DIRTY;
+        revision++;
+        return true;
+    }
+
+    public boolean assignTroopClass(int unitHandle, byte troopClass) {
+        requireHandle(unitHandle);
+        troopClass = normalizeTroopClass(troopClass);
+        int row = findRow(unitHandle);
+        if (row < 0) {
+            return assign(unitHandle, 0, 0, 0, troopClass);
+        }
+        if (troopClasses[row] == troopClass) return false;
+        troopClasses[row] = troopClass;
+        revision++;
+        return true;
+    }
+
+    public boolean recordUpkeepPaid(int unitHandle) {
+        int row = findRow(unitHandle);
+        if (row < 0 || unpaidCycles[row] == 0) return false;
+        unpaidCycles[row] = 0;
+        revision++;
+        return true;
+    }
+
+    public int recordUpkeepMissed(int unitHandle) {
+        int row = findRow(unitHandle);
+        if (row < 0) return -1;
+        int current = Byte.toUnsignedInt(unpaidCycles[row]);
+        if (current < MAX_UNPAID_CYCLES) {
+            unpaidCycles[row] = (byte) (current + 1);
+            revision++;
+            return current + 1;
+        }
+        return current;
+    }
+
+    public byte troopClass(int unitHandle) {
+        int row = findRow(unitHandle);
+        return row < 0 ? TROOP_CLASS_UNCLASSIFIED : troopClasses[row];
+    }
+
+    public int unpaidCycles(int unitHandle) {
+        int row = findRow(unitHandle);
+        return row < 0 ? 0 : Byte.toUnsignedInt(unpaidCycles[row]);
+    }
+
+    public void restoreRow(
+            int unitHandle,
+            int roleToken,
+            int rankToken,
+            int loadoutToken,
+            byte flags) {
+        restoreRow(unitHandle, roleToken, rankToken, loadoutToken, TROOP_CLASS_LEVY, 0, flags);
+    }
+
+    public void restoreRow(
+            int unitHandle,
+            int roleToken,
+            int rankToken,
+            int loadoutToken,
+            byte troopClass,
+            int unpaidCycleCount,
+            byte flags) {
+        if (revision != 0L) {
+            throw new IllegalStateException("Persisted unit role rows must be restored before runtime mutations");
+        }
+        requireHandle(unitHandle);
+        byte normalizedFlags = normalizeFlags(flags);
+        byte normalizedTroopClass = normalizeTroopClass(troopClass);
+        if (unpaidCycleCount < 0 || unpaidCycleCount > MAX_UNPAID_CYCLES) {
+            throw new IllegalArgumentException("Invalid unpaid upkeep cycle count " + unpaidCycleCount);
+        }
+        if (findRow(unitHandle) >= 0) {
+            throw new IllegalArgumentException("Duplicate persisted unit role handle " + unitHandle);
+        }
+        ensureDenseCapacity(size + 1);
+        ensureIndexCapacity(size + 1);
+        int row = size++;
+        unitHandles[row] = unitHandle;
+        roleTokens[row] = roleToken;
+        rankTokens[row] = rankToken;
+        loadoutTokens[row] = loadoutToken;
+        troopClasses[row] = normalizedTroopClass;
+        unpaidCycles[row] = (byte) unpaidCycleCount;
+        this.flags[row] = normalizedFlags;
+        putIndex(unitHandle, row);
+        structuralVersion++;
+    }
+
+    public void restoreRevision(long restoredRevision) {
+        if (restoredRevision < 0L) {
+            throw new IllegalArgumentException("Role revision must be non-negative");
+        }
+        if (revision != 0L) {
+            throw new IllegalStateException("Unit role revision can only be restored once during cold load");
+        }
+        if (restoredRevision < size) {
+            throw new IllegalArgumentException(
+                    "Role revision " + restoredRevision + " is below restored row count " + size);
+        }
+        revision = restoredRevision;
     }
 
     public boolean remove(int unitHandle) {
@@ -103,6 +242,8 @@ public final class PackedUnitRoleState {
             roleTokens[row] = roleTokens[last];
             rankTokens[row] = rankTokens[last];
             loadoutTokens[row] = loadoutTokens[last];
+            troopClasses[row] = troopClasses[last];
+            unpaidCycles[row] = unpaidCycles[last];
             flags[row] = flags[last];
             replaceIndexRow(movedHandle, row);
         }
@@ -110,6 +251,8 @@ public final class PackedUnitRoleState {
         roleTokens[last] = 0;
         rankTokens[last] = 0;
         loadoutTokens[last] = 0;
+        troopClasses[last] = 0;
+        unpaidCycles[last] = 0;
         flags[last] = 0;
         structuralVersion++;
         revision++;
@@ -125,6 +268,8 @@ public final class PackedUnitRoleState {
         destination.roleToken = roleTokens[row];
         destination.rankToken = rankTokens[row];
         destination.loadoutToken = loadoutTokens[row];
+        destination.troopClass = troopClasses[row];
+        destination.unpaidCycles = Byte.toUnsignedInt(unpaidCycles[row]);
         destination.flags = flags[row];
         return true;
     }
@@ -199,6 +344,8 @@ public final class PackedUnitRoleState {
         roleTokens = Arrays.copyOf(roleTokens, capacity);
         rankTokens = Arrays.copyOf(rankTokens, capacity);
         loadoutTokens = Arrays.copyOf(loadoutTokens, capacity);
+        troopClasses = Arrays.copyOf(troopClasses, capacity);
+        unpaidCycles = Arrays.copyOf(unpaidCycles, capacity);
         flags = Arrays.copyOf(flags, capacity);
     }
 
@@ -297,11 +444,28 @@ public final class PackedUnitRoleState {
         }
     }
 
+    private static byte normalizeFlags(byte flags) {
+        byte normalized = (byte) (flags & FLAG_EQUIPMENT_DIRTY);
+        if ((byte) (normalized & 0xFF) != (byte) (flags & 0xFF)) {
+            throw new IllegalArgumentException("Unknown unit role flag bits: " + flags);
+        }
+        return normalized;
+    }
+
+    private static byte normalizeTroopClass(byte troopClass) {
+        if (troopClass < TROOP_CLASS_UNCLASSIFIED || troopClass > TROOP_CLASS_NOBLE) {
+            throw new IllegalArgumentException("Unknown troop class " + troopClass);
+        }
+        return troopClass;
+    }
+
     public static final class View {
         private int unitHandle;
         private int roleToken;
         private int rankToken;
         private int loadoutToken;
+        private byte troopClass;
+        private int unpaidCycles;
         private byte flags;
 
         private View() {}
@@ -310,6 +474,8 @@ public final class PackedUnitRoleState {
         public int roleToken() { return roleToken; }
         public int rankToken() { return rankToken; }
         public int loadoutToken() { return loadoutToken; }
+        public byte troopClass() { return troopClass; }
+        public int unpaidCycles() { return unpaidCycles; }
         public byte flags() { return flags; }
     }
 
@@ -347,6 +513,8 @@ public final class PackedUnitRoleState {
         public int roleToken() { checkActive(); return owner.roleTokens[row]; }
         public int rankToken() { checkActive(); return owner.rankTokens[row]; }
         public int loadoutToken() { checkActive(); return owner.loadoutTokens[row]; }
+        public byte troopClass() { checkActive(); return owner.troopClasses[row]; }
+        public int unpaidCycles() { checkActive(); return Byte.toUnsignedInt(owner.unpaidCycles[row]); }
         public byte flags() { checkActive(); return owner.flags[row]; }
 
         private void checkActive() {

@@ -4,10 +4,12 @@ import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import org.millenaire.ReputationConstants;
+import org.millenaire.entity.MillVillager;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.persistence.ArmySavedData;
 import ru.kaiserroman.millenairearmies.persistence.PackedCommandState;
 import ru.kaiserroman.millenairearmies.persistence.PackedFactionState;
+import ru.kaiserroman.millenairearmies.persistence.PackedGarrisonState;
 import ru.kaiserroman.millenairearmies.persistence.PackedLogisticsState;
 import ru.kaiserroman.millenairearmies.persistence.PackedUnitMembership;
 import ru.kaiserroman.millenairearmies.persistence.StableDimensionTable;
@@ -21,11 +23,22 @@ public final class RecruitmentGameplaySelfTest {
     private RecruitmentGameplaySelfTest() {}
 
     public static void main(String[] arguments) {
+        adultSentinelSemantics();
         successPersistsAcrossReload();
         foreignSettlementAndUnavailableNpcFailClosed();
         duplicateAndCapacityAreRejected();
+        physicalCasualtyShrinksArmyExactlyOnce();
         disbandIsIdempotentAndReleasesExactlyOnce();
         System.out.println("RecruitmentGameplaySelfTest: all checks passed");
+    }
+
+    private static void adultSentinelSemantics() {
+        check(RecruitmentRules.adult(false, -1),
+                "negative Millenaire child-size sentinel is an adult");
+        check(!RecruitmentRules.adult(false, MillVillager.MAX_CHILD_SIZE),
+                "maximum child growth remains a child until Millenaire converts the identity");
+        check(!RecruitmentRules.adult(true, -1),
+                "entity child state vetoes a contradictory record");
     }
 
     private static void successPersistsAcrossReload() {
@@ -96,6 +109,22 @@ public final class RecruitmentGameplaySelfTest {
                 "rejections do not mutate membership");
     }
 
+    private static void physicalCasualtyShrinksArmyExactlyOnce() {
+        Fixture fixture = new Fixture(4);
+        int army = fixture.createVerifiedArmy(5, 0L);
+        fixture.roster.recruit(fixture.owner, army, 10L, 20L, 1L);
+        fixture.roster.recruit(fixture.owner, army, 11L, 21L, 2L);
+        check(fixture.roster.releaseCasualty(10L, 20L),
+                "physical casualty removes recruited fighter");
+        check(fixture.memberships.unitHandleForUuid(10L, 20L) == 0
+                        && fixture.ecs.armyUnitCount(army) == 1
+                        && fixture.ecs.unitSize() == 1,
+                "casualty immediately updates packed membership and army count");
+        check(fixture.released[0] == 1, "execution task released once for casualty");
+        check(!fixture.roster.releaseCasualty(10L, 20L) && fixture.released[0] == 1,
+                "duplicate death notification is idempotent");
+    }
+
     private static void disbandIsIdempotentAndReleasesExactlyOnce() {
         Fixture fixture = new Fixture(4);
         int army = fixture.createVerifiedArmy(9, 0L);
@@ -107,14 +136,16 @@ public final class RecruitmentGameplaySelfTest {
         fixture.commands.add(
                 army, 9, ArmyOrderType.HOLD.code(), 0, 0L, 0L, 0L, 0L, 1L, (byte) 0);
         fixture.logistics.add(9, army, 0, 1, 0, 0L, 1L, (byte) 0);
+        fixture.garrisons.assign(army, 10L, 11L, 0, 12L, 32, 1_200L);
         long first = fixture.roster.disband(fixture.owner, army);
         check(first == 3L, "disband reports two released fighters");
         check(fixture.released[0] == 2, "each recruited NPC released once");
         check(fixture.ecs.armySize() == 0 && fixture.ecs.unitSize() == 0
                         && fixture.memberships.size() == 0 && fixture.controllers.size() == 0,
                 "disband removes controller, units and stale memberships without orphans");
-        check(fixture.commands.size() == 0 && fixture.logistics.size() == 0,
-                "disband removes persisted command/logistics references to the dead handle");
+        check(fixture.commands.size() == 0 && fixture.logistics.size() == 0
+                        && fixture.garrisons.size() == 0,
+                "disband removes command, logistics and garrison references to the dead handle");
         StableDimensionTable dimensions = new StableDimensionTable();
         dimensions.intern(Level.OVERWORLD.location());
         new ArmySavedData(
@@ -150,6 +181,7 @@ public final class RecruitmentGameplaySelfTest {
         private final PackedArmyControllers controllers = new PackedArmyControllers();
         private final PackedCommandState commands = new PackedCommandState();
         private final PackedLogisticsState logistics = new PackedLogisticsState();
+        private final PackedGarrisonState garrisons = new PackedGarrisonState();
         private final int[] dirty = {0};
         private final int[] released = {0};
         private final ArmyCommandAuthority owner = ArmyCommandAuthority.player(
@@ -163,6 +195,7 @@ public final class RecruitmentGameplaySelfTest {
                     controllers,
                     commands,
                     logistics,
+                    garrisons,
                     capacity,
                     () -> dirty[0]++,
                     (unit, most, least) -> released[0]++);

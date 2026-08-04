@@ -126,11 +126,11 @@ trap cleanup EXIT HUP INT TERM
 "$script_dir/static-audit.sh" "$run_dir/artifacts/static.json"
 
 JAVA_HOME="$java_home" "$repo_root/gradlew" -p "$repo_root" \
-    clean build --no-configuration-cache
+    --offline clean build --no-configuration-cache
 [[ -x "$server_repo/server-optimizer/gradlew" && -f "$server_repo/stress-harness/mod/build.gradle" ]] \
     || { printf 'set BANNEROK_SERVER_REPO to bannerok-server with stress-harness\n' >&2; exit 66; }
 JAVA_HOME="$java_home" "$server_repo/server-optimizer/gradlew" -p "$server_repo/stress-harness/mod" \
-    clean build --no-configuration-cache
+    --offline clean build --no-configuration-cache
 
 ln -s -- "$runtime_root/libraries" "$run_dir/server/libraries"
 for tree in millenaire millenaire-custom; do
@@ -188,6 +188,7 @@ cat > "$run_dir/server/user_jvm_args.txt" <<EOF
 -Dbannerok.stress.enabled=true
 -Dmillenairearmies.qa.enabled=true
 -Dmillenairearmies.orderExecutionEnabled=true
+-Dmillenairearmies.logisticsInventoryProjectionEnabled=true
 -Dsarvaroptimizer.millenaire.boundedVillageActivation=true
 -Dsarvaroptimizer.millenaire.villageActivationChunksPerTick=2
 -Dsarvaroptimizer.millenaire.villageActivationBudgetMillis=8

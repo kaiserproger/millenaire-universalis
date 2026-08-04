@@ -10,6 +10,8 @@ import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
 public record CreateArmyIntent(
         int actionId,
         int factionId,
+        long homeVillageUuidMost,
+        long homeVillageUuidLeast,
         long homeVillagePosition,
         int templateKeyId,
         int desiredUnits,
@@ -36,6 +38,8 @@ public record CreateArmyIntent(
     private static void encode(RegistryFriendlyByteBuf buffer, CreateArmyIntent payload) {
         BoundedCodecs.writeCount(buffer, payload.actionId, Integer.MAX_VALUE, "actionId");
         BoundedCodecs.writeCount(buffer, payload.factionId, Integer.MAX_VALUE, "factionId");
+        buffer.writeLong(payload.homeVillageUuidMost);
+        buffer.writeLong(payload.homeVillageUuidLeast);
         buffer.writeLong(payload.homeVillagePosition);
         BoundedCodecs.writeCount(buffer, payload.templateKeyId, Integer.MAX_VALUE, "templateKeyId");
         BoundedCodecs.writeCount(buffer, payload.desiredUnits, ArmiesProtocol.MAX_CREATE_UNITS, "desiredUnits");
@@ -47,6 +51,8 @@ public record CreateArmyIntent(
         return new CreateArmyIntent(
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "actionId"),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "factionId"),
+                buffer.readLong(),
+                buffer.readLong(),
                 buffer.readLong(),
                 BoundedCodecs.readCount(buffer, Integer.MAX_VALUE, "templateKeyId"),
                 BoundedCodecs.readCount(buffer, ArmiesProtocol.MAX_CREATE_UNITS, "desiredUnits"),

@@ -4,6 +4,7 @@ import java.util.Arrays;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
+import ru.kaiserroman.millenairearmies.server.supply.ArmySupplyAccess;
 
 /** Two retained physical attack tasks per unit slot, alternating scheduler identity per revision. */
 final class StrategicAttackTaskPool {
@@ -19,22 +20,29 @@ final class StrategicAttackTaskPool {
             ArmyBattleCoordinator battles,
             MillenaireEntityBridge entities,
             FactionProjectionService factions,
+            PhysicalSiegeCoordinator sieges,
+            PhysicalBattleEventLog battleEvents,
+            ArmySupplyAccess supplies,
             int unitHandle,
             int armyHandle,
             long revision,
             long packedObjective,
             int formationCode,
             int expectedUnits,
-            int sourceFaction) {
+            int sourceFaction,
+            int dimensionId,
+            boolean siegeMode,
+            boolean shieldWall,
+            boolean fireAtWill) {
         int slot = PackedArmyEcs.handleSlotIndex(unitHandle);
         ensureCapacity(slot + 1);
         if (unitHandles[slot] != unitHandle) {
             unitHandles[slot] = unitHandle;
             nextLanes[slot] = 0;
             laneZero[slot] = new StrategicAttackTask(
-                    state, telemetry, formations, battles, entities, factions, unitHandle);
+                    state, telemetry, formations, battles, entities, factions, sieges, battleEvents, supplies, unitHandle);
             laneOne[slot] = new StrategicAttackTask(
-                    state, telemetry, formations, battles, entities, factions, unitHandle);
+                    state, telemetry, formations, battles, entities, factions, sieges, battleEvents, supplies, unitHandle);
         }
         int lane = nextLanes[slot];
         nextLanes[slot] = (byte) (lane ^ 1);
@@ -45,7 +53,11 @@ final class StrategicAttackTaskPool {
                 packedObjective,
                 formationCode,
                 expectedUnits,
-                sourceFaction);
+                sourceFaction,
+                dimensionId,
+                siegeMode,
+                shieldWall,
+                fireAtWill);
         return task;
     }
 

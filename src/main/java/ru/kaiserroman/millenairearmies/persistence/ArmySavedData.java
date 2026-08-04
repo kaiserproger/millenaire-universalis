@@ -9,6 +9,7 @@ import net.minecraft.world.level.saveddata.SavedData;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.server.service.PackedArmyControllers;
+import ru.kaiserroman.millenairearmies.server.unit.PackedUnitRoleState;
 
 /**
  * Versioned Overworld SavedData owner for factions, the army ECS, persistent villager membership,
@@ -33,6 +34,9 @@ public final class ArmySavedData extends SavedData {
     private final PackedCommandState commands;
     private final PackedLogisticsState logistics;
     private final PackedSettlementEconomyState settlementEconomy;
+    private final PackedGarrisonState garrisons;
+    private final PackedUnitRoleState unitRoles;
+    private final PackedArmySupplyState armySupplies;
     private long armyRevision;
 
     public ArmySavedData() {
@@ -46,7 +50,9 @@ public final class ArmySavedData extends SavedData {
                 0L,
                 new PackedCommandState(),
                 new PackedLogisticsState(),
-                new PackedSettlementEconomyState());
+                new PackedSettlementEconomyState(),
+                new PackedGarrisonState(),
+                new PackedUnitRoleState());
     }
 
     public ArmySavedData(PackedArmyEcs ecs, PackedCommandState commands) {
@@ -60,7 +66,9 @@ public final class ArmySavedData extends SavedData {
                 0L,
                 commands,
                 new PackedLogisticsState(),
-                new PackedSettlementEconomyState());
+                new PackedSettlementEconomyState(),
+                new PackedGarrisonState(),
+                new PackedUnitRoleState());
     }
 
     public ArmySavedData(
@@ -97,6 +105,81 @@ public final class ArmySavedData extends SavedData {
             PackedCommandState commands,
             PackedLogisticsState logistics,
             PackedSettlementEconomyState settlementEconomy) {
+        this(
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                settlementEconomy,
+                new PackedGarrisonState(),
+                new PackedUnitRoleState());
+    }
+
+    public ArmySavedData(
+            StableDimensionTable dimensions,
+            StableItemTable items,
+            PackedFactionState factions,
+            PackedArmyEcs ecs,
+            PackedUnitMembership memberships,
+            PackedArmyControllers controllers,
+            long armyRevision,
+            PackedCommandState commands,
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy,
+            PackedGarrisonState garrisons) {
+        this(
+                dimensions,
+                items,
+                factions,
+                ecs,
+                memberships,
+                controllers,
+                armyRevision,
+                commands,
+                logistics,
+                settlementEconomy,
+                garrisons,
+                new PackedUnitRoleState());
+    }
+
+    public ArmySavedData(
+            StableDimensionTable dimensions,
+            StableItemTable items,
+            PackedFactionState factions,
+            PackedArmyEcs ecs,
+            PackedUnitMembership memberships,
+            PackedArmyControllers controllers,
+            long armyRevision,
+            PackedCommandState commands,
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy,
+            PackedGarrisonState garrisons,
+            PackedUnitRoleState unitRoles) {
+        this(
+                dimensions, items, factions, ecs, memberships, controllers, armyRevision,
+                commands, logistics, settlementEconomy, garrisons, unitRoles,
+                new PackedArmySupplyState());
+    }
+
+    public ArmySavedData(
+            StableDimensionTable dimensions,
+            StableItemTable items,
+            PackedFactionState factions,
+            PackedArmyEcs ecs,
+            PackedUnitMembership memberships,
+            PackedArmyControllers controllers,
+            long armyRevision,
+            PackedCommandState commands,
+            PackedLogisticsState logistics,
+            PackedSettlementEconomyState settlementEconomy,
+            PackedGarrisonState garrisons,
+            PackedUnitRoleState unitRoles,
+            PackedArmySupplyState armySupplies) {
         if (dimensions == null
                 || items == null
                 || factions == null
@@ -105,7 +188,10 @@ public final class ArmySavedData extends SavedData {
                 || controllers == null
                 || commands == null
                 || logistics == null
-                || settlementEconomy == null) {
+                || settlementEconomy == null
+                || garrisons == null
+                || unitRoles == null
+                || armySupplies == null) {
             throw new NullPointerException("Army SavedData stores");
         }
         if (armyRevision < 0L) {
@@ -121,6 +207,9 @@ public final class ArmySavedData extends SavedData {
         this.commands = commands;
         this.logistics = logistics;
         this.settlementEconomy = settlementEconomy;
+        this.garrisons = garrisons;
+        this.unitRoles = unitRoles;
+        this.armySupplies = armySupplies;
     }
 
     public static SavedData.Factory<ArmySavedData> factory() {
@@ -173,6 +262,18 @@ public final class ArmySavedData extends SavedData {
         return settlementEconomy;
     }
 
+    public PackedGarrisonState garrisons() {
+        return garrisons;
+    }
+
+    public PackedUnitRoleState unitRoles() {
+        return unitRoles;
+    }
+
+    public PackedArmySupplyState armySupplies() {
+        return armySupplies;
+    }
+
     public long armyRevision() {
         return armyRevision;
     }
@@ -199,7 +300,10 @@ public final class ArmySavedData extends SavedData {
                 armyRevision,
                 commands,
                 logistics,
-                settlementEconomy);
+                settlementEconomy,
+                garrisons,
+                unitRoles,
+                armySupplies);
     }
 
     public static ArmySavedData load(CompoundTag tag, HolderLookup.Provider registries) {
@@ -220,7 +324,10 @@ public final class ArmySavedData extends SavedData {
                 loaded.armyRevision(),
                 loaded.commands(),
                 loaded.logistics(),
-                loaded.settlementEconomy());
+                loaded.settlementEconomy(),
+                loaded.garrisons(),
+                loaded.unitRoles(),
+                loaded.armySupplies());
     }
 
     private static StableDimensionTable defaultDimensions() {
