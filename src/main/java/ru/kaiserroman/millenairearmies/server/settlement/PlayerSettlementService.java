@@ -857,9 +857,17 @@ public final class PlayerSettlementService {
         if (village == null || level == null || !village.isControlledBy(player.getUUID())) {
             return reject("not_owner", "Capital is unavailable or ownership changed");
         }
-        int cleared = village.getControlledQueue().size();
-        boolean cancelledPending = village.getPendingProject() != null;
-        village.getControlledQueue().clear();
+        int cleared = drainControlledQueue(level, village);
+        Village.PendingProject pending = village.getPendingProject();
+        boolean cancelledPending = pending != null;
+        if (pending != null && !pending.isUpgrade()) {
+            removeProjectSigns(
+                    level,
+                    pending.planSetId(),
+                    pending.variant(),
+                    pending.level(),
+                    pending.plannedLocation());
+        }
         village.setPendingProject(null);
         village.setNoProjectsLeftUntil(0L);
         village.markDirty();
@@ -868,6 +876,37 @@ public final class PlayerSettlementService {
                 "cleared",
                 "Cleared " + cleared + " controlled projects"
                         + (cancelledPending ? " and cancelled the pending project" : ""));
+    }
+
+    static int drainControlledQueue(ServerLevel level, Village village) {
+        if (village == null) return 0;
+        int cleared = 0;
+        ControlledQueuedProject project;
+        while ((project = village.pollControlledQueueHead()) != null) {
+            removeProjectSigns(
+                    level,
+                    project.planSetId(),
+                    project.variant(),
+                    project.level(),
+                    project.plannedLocation());
+            cleared++;
+        }
+        return cleared;
+    }
+
+    private static void removeProjectSigns(
+            ServerLevel level,
+            ResourceLocation planSetId,
+            String variant,
+            int projectLevel,
+            org.millenaire.world.PlacedLocation location) {
+        if (level == null || planSetId == null || variant == null || location == null) return;
+        BuildingPlanSet planSet = ModCultures.getBuildingPlanSet(planSetId);
+        BuildingPlanSet.LevelDef levelDef = planSet == null
+                ? null
+                : planSet.getLevel(variant, projectLevel);
+        BuildingPlan plan = levelDef == null ? null : ModCultures.getBuildingPlan(levelDef.planId());
+        if (plan != null) PlacementSignHelper.removeCornerSigns(level, plan, location);
     }
 
     public List<ResourceLocation> villageTypes(int limit) {
