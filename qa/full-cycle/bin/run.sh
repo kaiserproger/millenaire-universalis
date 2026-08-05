@@ -143,10 +143,10 @@ rsync -a \
     --exclude='automodpack-*.jar' \
     --exclude='bannerok_authgate-*.jar' \
     --exclude='bannerok-authgate*.jar' \
-    --exclude='millenaire_armies-*.jar' \
+    --exclude='millenaire_universalis-*.jar' \
     --exclude='bannerok-stress-harness-*.jar' \
     "$runtime_root/mods/" "$run_dir/server/mods/"
-cp -a -- "$repo_root/build/libs/millenaire_armies-1.0.0.jar" \
+cp -a -- "$repo_root/build/libs/millenaire_universalis-1.1.0.jar" \
     "$run_dir/server/mods/"
 cp -a -- "$server_repo/stress-harness/mod/build/libs/bannerok-stress-harness-1.0.0.jar" \
     "$run_dir/server/mods/"

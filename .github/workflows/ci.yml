@@ -31,13 +31,13 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             vendor
-          key: millenaire-armies-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'scripts/materialize-dependencies.py') }}
+          key: millenaire-universalis-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle.properties', 'scripts/materialize-dependencies.py') }}
       - run: python3 scripts/materialize-dependencies.py
       - run: ./gradlew --no-daemon --no-parallel --no-configuration-cache clean check build
       - uses: actions/upload-artifact@v4
         with:
-          name: millenaire-armies
-          path: build/libs/millenaire_armies-*.jar
+          name: millenaire-universalis
+          path: build/libs/millenaire_universalis-*.jar
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: millenaire-armies
+          name: millenaire-universalis
           path: release
       - env:
           GH_TOKEN: ${{ github.token }}

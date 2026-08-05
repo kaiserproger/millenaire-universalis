@@ -1,33 +1,21 @@
-# Millenaire Armies
+# Millenaire Universalis
 
-NeoForge 1.21.1 addon that turns real Millenaire villagers and settlements into a persistent military layer. Armies owns physical movement, individual combat, garrisons, sieges, occupation and player command; political state and historical settlement dynamics are supplied by two independently versioned pure-Java kernels.
+Unified NeoForge 1.21.1 addon for Millenaire world simulation, political Realms, diplomacy, armies, logistics, sieges and player command. Realm, Simulation and the Minecraft integration now ship as one client/server mod and one release artifact.
 
-## Standalone repositories and dependency boundary
+## Unified repository and compatibility boundary
 
-- [`millenaire-armies`](https://github.com/kaiserproger/millenaire-armies) — Minecraft/NeoForge/Millenaire integration and physical gameplay.
-- [`millenaire-realm`](https://github.com/kaiserproger/millenaire-realm) — `ru.kaiserroman.millenaire:millenaire-realm:1.0.0`; mixed player/NPC Realms, government, diplomacy, dependencies, war outcomes and historical state lifecycle.
-- [`millenaire-simulation`](https://github.com/kaiserproger/millenaire-simulation) — `ru.kaiserroman.millenaire:millenaire-simulation:1.0.0`; inactive-settlement history, population, productivity, regional shocks, commodities and dynamic prices.
+The project is built as a single Gradle source set. Realm, Simulation and the NeoForge integration are stored as ordinary Java sources in this repository and compile together into one artifact. The final JAR contains ordinary classes and no nested Realm/Simulation JARs. Historical README and license files from the former kernel repositories are retained under `docs/consolidation/`.
 
-Realm and Simulation do not depend on Minecraft, NeoForge, Millenaire, Armies or each other. Armies resolves their pinned binary coordinates from `local-maven/` and embeds the kernel classes into the final mod JAR, so a fresh Armies checkout does not require sibling source directories.
+The public addon identity is `millenaire_universalis`. Existing SavedData filenames, `/millarmies` commands, `millenaire-armies.properties`, translation keys and the `millenaire_armies` content namespace remain compatibility contracts for existing worlds and operator tooling.
 
 ## Build
 
 ```bash
 python3 scripts/materialize-dependencies.py
-./gradlew --offline clean compileJava check build
-```
-
-`materialize-dependencies.py` verifies the exact SHA-256 of the local Millenaire beta.2 API/runtime JAR; it is not committed. The release artifact is `build/libs/millenaire_armies-<version>.jar`.
-
-To refresh the bundled kernels from local Realm/Simulation checkouts:
-
-```bash
-../millenaire-realm/gradlew -p ../millenaire-realm clean check build publish \
-  -PintegrationRepositoryUrl="$PWD/local-maven"
-../millenaire-simulation/gradlew -p ../millenaire-simulation clean check build publish \
-  -PintegrationRepositoryUrl="$PWD/local-maven"
 ./gradlew --offline clean check build
 ```
+
+`materialize-dependencies.py` verifies the exact SHA-256 of the local Millenaire beta.2 API/runtime JAR; it is not committed. The release artifact is `build/libs/millenaire_universalis-<version>.jar`.
 
 ## Gameplay loop
 

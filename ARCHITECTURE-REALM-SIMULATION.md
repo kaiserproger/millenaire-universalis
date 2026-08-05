@@ -249,6 +249,6 @@ Summoning Wand и деревни игрока остаются в исходно
    уже мигрирует автоматически, но удаление compatibility SavedData требует отдельной валидации
    реальных NBT, rollback-плана и проверки Simulation schema.
 
-Модули собираются отдельно, проходят независимые self-test и упаковываются в один
-`millenaire_armies` JAR. Чистые ядра Realm/Simulation по-прежнему не зависят от NeoForge или
-Millenaire; Minecraft-мутация находится только в адаптерном слое.
+Realm и Simulation сохраняют независимые pure-Java self-test, но их исходники теперь компилируются
+вместе с NeoForge-адаптером в единый `millenaire_universalis` JAR. Чистые ядра по-прежнему не
+зависят от NeoForge или Millenaire; Minecraft-мутация находится только в адаптерном слое.

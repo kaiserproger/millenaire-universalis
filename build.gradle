@@ -16,25 +16,8 @@ java {
     withSourcesJar()
 }
 
-repositories {
-    maven {
-        name = 'bundledKernels'
-        url = uri(rootProject.file('local-maven'))
-        content {
-            includeGroup 'ru.kaiserroman.millenaire'
-        }
-    }
-}
-
-configurations {
-    embeddedKernels
-    implementation.extendsFrom embeddedKernels
-}
-
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
-    embeddedKernels "ru.kaiserroman.millenaire:millenaire-realm:${realm_version}"
-    embeddedKernels "ru.kaiserroman.millenaire:millenaire-simulation:${simulation_version}"
 }
 
 sourceSets.main.resources {
@@ -70,18 +53,6 @@ tasks.withType(AbstractArchiveTask).configureEach {
     reproducibleFileOrder = true
 }
 
-tasks.named('jar', Jar).configure {
-    from({
-        configurations.embeddedKernels.collect { dependency -> zipTree(dependency) }
-    }) {
-        exclude 'META-INF/MANIFEST.MF'
-        exclude 'META-INF/*.SF'
-        exclude 'META-INF/*.DSA'
-        exclude 'META-INF/*.RSA'
-    }
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -103,7 +74,7 @@ dependencies {
     if (rootProject.findProperty('fullClientSmoke') == 'true') {
         runtimeOnly fileTree(rootProject.file('vendor')) {
             include '*.jar'
-            exclude 'millenaire_armies-*.jar'
+            exclude 'millenaire_universalis-*.jar'
             exclude 'sarvaroptimizer_*.jar'
             exclude 'neoforge-carpet-*.jar'
         }
@@ -338,8 +309,27 @@ tasks.register('validateArmyUiResources', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runRealmCoreSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the Realm kernel self-test from the unified addon source set.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenaire.realm.RealmCoreSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runWorldSimulationSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the Simulation kernel self-test from the unified addon source set.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenaire.simulation.WorldSimulationSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.named('check') {
-    dependsOn 'runArmyUiStateSelfTest', 'validateArmyUiResources',
+    dependsOn 'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
+            'runArmyUiStateSelfTest', 'validateArmyUiResources',
             'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest',
             'runPackedGarrisonStateSelfTest', 'runGarrisonExecutionPolicySelfTest',
             'runGarrisonAssignmentPolicySelfTest', 'runSettlementEconomySelfTest',

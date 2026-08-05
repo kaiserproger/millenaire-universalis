@@ -1,32 +1,32 @@
 modLoader="javafml"
-loaderVersion="[4,)"
-license="MIT"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
 
 [[mods]]
-modId="millenaire_armies"
-version="1.0.0-alpha.1"
-displayName="Millenaire Armies"
-authors="Local server build"
-description='''A client/server Millenaire addon for factions, army command, logistics, and strategic UI.'''
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="Bannerok"
+description='''${mod_description}'''
 
-[[dependencies.millenaire_armies]]
+[[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
-versionRange="[21.1.247]"
+versionRange="[${neo_version}]"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.millenaire_armies]]
+[[dependencies.${mod_id}]]
 modId="minecraft"
 type="required"
-versionRange="[1.21.1]"
+versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.millenaire_armies]]
+[[dependencies.${mod_id}]]
 modId="millenaire"
 type="required"
-reason="This addon targets Millenaire 9.0.0-beta.2 on Minecraft 1.21.1."
+reason="Millenaire Universalis targets Millenaire 9.0.0-beta.2 on Minecraft 1.21.1."
 versionRange="[9.0.0-beta.2]"
 ordering="AFTER"
 side="BOTH"

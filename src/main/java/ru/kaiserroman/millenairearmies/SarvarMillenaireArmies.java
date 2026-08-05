@@ -34,7 +34,8 @@ import ru.kaiserroman.millenairearmies.server.integration.ArmiesIntegrationBridg
 
 @Mod(SarvarMillenaireArmies.MOD_ID)
 public final class SarvarMillenaireArmies {
-    public static final String MOD_ID = "millenaire_armies";
+    public static final String MOD_ID = "millenaire_universalis";
+    public static final String LEGACY_CONTENT_NAMESPACE = "millenaire_armies";
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final ArmyLifecycleService lifecycle = new ArmyLifecycleService();
@@ -47,7 +48,7 @@ public final class SarvarMillenaireArmies {
             NeoForge.EVENT_BUS.register(this);
         }
         LOGGER.info(
-                "Millenaire Armies strategy: {}; limits factions={}, armies={}, orders={}, logistics={}; config={}",
+                "Millenaire Universalis strategy: {}; limits factions={}, armies={}, orders={}, logistics={}; config={}",
                 ArmiesConfig.ENABLED ? "enabled" : "disabled by config",
                 ArmiesConfig.MAX_FACTIONS,
                 ArmiesConfig.MAX_ARMIES,
@@ -60,7 +61,7 @@ public final class SarvarMillenaireArmies {
     public void onServerStarted(ServerStartedEvent event) {
         if (lifecycle.start(event.getServer())) {
             LOGGER.info(
-                    "Millenaire Armies strategy, recruitment, diplomacy, logistics and networking are ready; entity-side order delegation={}; combat/pathfinding remain Millenaire-owned",
+                    "Millenaire Universalis strategy, recruitment, diplomacy, logistics and networking are ready; entity-side order delegation={}; combat/pathfinding remain Millenaire-owned",
                     ArmiesConfig.ORDER_EXECUTION_ENABLED ? "enabled (bounded server-thread bridge)" : "disabled (state-only orders)");
         }
     }
