@@ -28,7 +28,7 @@ Millenaire's physical `Village` remains authoritative for buildings, residents, 
 
 `/millarmies settlement types` lists loaded non-marvel player-controlled village types.
 
-`/millarmies settlement create <village_type> <name>` validates the complete site with Millenaire, preflights capacity for the capital and every generated hamlet, creates the physical village complex, founds a canonical Realm, attaches child settlements as governor-led regions, then registers both player-settlement stores. If canonical foundation is unexpectedly rejected after physical registration, every newly created village registration is removed and the index is reconciled.
+`/millarmies settlement create <village_type> <name>` searches at most 32 deterministic candidates within 96 already-loaded blocks, from the player's position outward, and validates each complete site with Millenaire. It never force-loads or generates chunks. After finding a valid site it preflights capacity for the capital and every generated hamlet, creates the physical village complex, founds a canonical Realm, attaches child settlements as governor-led regions, then registers both player-settlement stores. If no candidate is valid, the command tells the player to move to broad, level, dry terrain or select another village type. If canonical foundation is unexpectedly rejected after physical registration, every newly created village registration is removed and the index is reconciled.
 
 `/millarmies settlement adopt <capital_uuid> <name>` adopts an already player-controlled root village after checking owner, canonical and compatibility capacity. A child hamlet cannot become a capital; all controlled descendants of the selected root are discovered first and adopted into the same Realm as governor-led regions in one preflighted transaction.
 
@@ -108,4 +108,7 @@ The `check` lifecycle includes dedicated self-tests for:
 
 - tier progression, territory growth and construction unlocks;
 - profile persistence, queue bounds and cyclic automatic-development iteration;
-- player-settlement identity, duplicate Realm rejection, monotonic territory/tier and malformed SavedData rejection.
+- player-settlement identity, duplicate Realm rejection, monotonic territory/tier and malformed SavedData rejection;
+- the bounded, unique near-to-far foundation search envelope and queue clearing through Millenaire's mutable API.
+
+A full 44-mod dedicated-server QA in peaceful mode additionally covers non-OP Carpet foundation, physical growth, automatic development, clean restart persistence, city-state capture through the production command, captured-settlement Realm/owner/parent transfer, and a second clean restart verification.

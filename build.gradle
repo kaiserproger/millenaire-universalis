@@ -364,6 +364,16 @@ tasks.register('runPlayerSettlementQueueSelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runPlayerSettlementFoundationSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the bounded deterministic player-settlement foundation search envelope.'
+    classpath = sourceSets.main.runtimeClasspath + files(
+            rootProject.file('vendor/millenaire-9.0.0-beta.2.jar'))
+    mainClass = 'ru.kaiserroman.millenairearmies.server.settlement.PlayerSettlementFoundationSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runRealmCoreSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs the Realm kernel self-test from the unified addon source set.'
@@ -386,7 +396,7 @@ tasks.named('check') {
     dependsOn 'runUniversalisIdentitySelfTest', 'runPlayerSettlementPolicySelfTest',
             'runPlayerSettlementSavedDataSelfTest', 'runPlayerSettlementCustomizationSavedDataSelfTest',
             'runPlayerSettlementTerritoryRegistrySelfTest', 'runPlayerSettlementQueueSelfTest',
-            'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
+            'runPlayerSettlementFoundationSelfTest', 'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
             'runArmyUiStateSelfTest', 'validateArmyUiResources',
             'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest',
             'runPackedGarrisonStateSelfTest', 'runGarrisonExecutionPolicySelfTest',

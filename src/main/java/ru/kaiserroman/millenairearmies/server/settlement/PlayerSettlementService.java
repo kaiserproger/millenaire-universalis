@@ -57,6 +57,12 @@ public final class PlayerSettlementService {
     private static final int PROJECT_REACH_BLOCKS = 160;
     private static final int CAPTURE_REACH_BLOCKS = 64;
     private static final int FOUNDATION_COMPLETION_PERCENT = 100;
+    private static final int FOUNDATION_SEARCH_RADIUS_BLOCKS = 96;
+    private static final int FOUNDATION_SEARCH_STEP_BLOCKS = 32;
+    private static final int MAX_FOUNDATION_SITE_ATTEMPTS = 32;
+    private static final String NO_SETTLEMENT_MESSAGE =
+            "You do not own a player settlement. Use /millarmies settlement types, then "
+                    + "/millarmies settlement found <village_type> <name>.";
 
     private final MillenaireVillageIndex villageIndex;
     private final RealmSavedData realms;
@@ -305,18 +311,22 @@ public final class PlayerSettlementService {
         }
         ServerLevel level = player.serverLevel();
         BlockPos playerPosition = player.blockPosition();
-        int surfaceY = level.getHeight(
-                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                playerPosition.getX(),
-                playerPosition.getZ());
-        BlockPos position = new BlockPos(playerPosition.getX(), surfaceY, playerPosition.getZ());
-        if (!areaLoaded(level, position, type.radius() + 32)) {
-            return reject("area_not_loaded", "The complete foundation area must be loaded");
+        FoundationSite foundation = findFoundationSite(level, playerPosition, type);
+        if (foundation.position() == null) {
+            if (foundation.validatedSites() == 0) {
+                return reject(
+                        "area_not_loaded",
+                        "Load the complete foundation area around a broad, level, dry site and retry");
+            }
+            String reason = foundation.firstFailure() == null
+                    ? "Millenaire rejected every loaded candidate"
+                    : foundation.firstFailure().getString();
+            return reject(
+                    "invalid_site",
+                    reason + ". No valid site was found within " + FOUNDATION_SEARCH_RADIUS_BLOCKS
+                            + " loaded blocks; move to broad, level, dry terrain or choose another village type");
         }
-        Component validation = VillageSpawner.validateSite(level, position, type);
-        if (validation != null) {
-            return reject("invalid_site", validation.getString());
-        }
+        BlockPos position = foundation.position();
 
         int maximumSpawnedSettlements = 1 + type.hamlets().size();
         if (!administration.canFoundPlayerRealm(owner, maximumSpawnedSettlements)) {
@@ -617,7 +627,7 @@ public final class PlayerSettlementService {
         PlayerSettlementSavedData.View profile = profile(player.getUUID());
         PlayerSettlementCustomizationSavedData.View settings = customization(player.getUUID());
         if (profile == null || settings == null) {
-            return reject("no_settlement", "Create a player settlement first");
+            return reject("no_settlement", NO_SETTLEMENT_MESSAGE);
         }
         UUID managedSettlement = settlementId == null ? profile.capital : settlementId;
         Village village = village(managedSettlement);
@@ -633,7 +643,10 @@ public final class PlayerSettlementService {
             return OperationResult.fail("too_far", "Stand within " + PROJECT_REACH_BLOCKS + " blocks of the project");
         }
         BuildingPlanSet set = ModCultures.getBuildingPlanSet(planSetId);
-        if (set == null) return OperationResult.fail("missing_plan", "Unknown building plan set: " + planSetId);
+        if (set == null) return OperationResult.fail(
+                "missing_plan",
+                "Unknown building plan set: " + planSetId
+                        + ". Use /millarmies settlement catalog to list valid plans.");
         VillageType baseType = ModCultures.getVillageType(village.getVillageTypeId());
         if (baseType == null || !set.culture().equals(baseType.culture())) {
             return OperationResult.fail("wrong_culture", "Only buildings of the settlement culture can be queued");
@@ -721,7 +734,7 @@ public final class PlayerSettlementService {
         PlayerSettlementSavedData.View profile = profile(player.getUUID());
         PlayerSettlementCustomizationSavedData.View settings = customization(player.getUUID());
         if (profile == null || settings == null) {
-            return reject("no_settlement", "Create a player settlement first");
+            return reject("no_settlement", NO_SETTLEMENT_MESSAGE);
         }
         UUID managedSettlement = settlementId == null ? profile.capital : settlementId;
         Village village = village(managedSettlement);
@@ -736,7 +749,10 @@ public final class PlayerSettlementService {
         BuildingPlanSet set = ModCultures.getBuildingPlanSet(planSetId);
         VillageType baseType = ModCultures.getVillageType(village.getVillageTypeId());
         if (set == null || baseType == null || !set.culture().equals(baseType.culture())) {
-            return reject("missing_plan", "Unknown or wrong-culture building plan set: " + planSetId);
+            return reject(
+                    "missing_plan",
+                    "Unknown or wrong-culture building plan set: " + planSetId
+                            + ". Use /millarmies settlement catalog to list valid plans.");
         }
         VillageType.LayoutSlot offered = ControlledProjectsService.findOfferedSlot(baseType, planSetId, set);
         boolean extended = offered == null;
@@ -807,7 +823,7 @@ public final class PlayerSettlementService {
         ServerLevel level = profile == null ? null : level(profile.capital);
         if (profile == null || capital == null || level == null
                 || !mayManageSettlement(player.getUUID(), profile, profile.capital, capital)) {
-            return reject("no_settlement", "Create a player settlement first");
+            return reject("no_settlement", NO_SETTLEMENT_MESSAGE);
         }
         if (!administration.renamePlayerRealm(player.getUUID(), name)) {
             return reject("realm_rejected", "Canonical Realm rename was rejected");
@@ -827,14 +843,14 @@ public final class PlayerSettlementService {
         }
         return customization.setProfile(player.getUUID(), profile)
                 ? OperationResult.success("profile", "Development profile set to " + profile.name().toLowerCase(Locale.ROOT))
-                : reject("no_settlement", "Create a player settlement first");
+                : reject("no_settlement", NO_SETTLEMENT_MESSAGE);
     }
 
     public OperationResult setAutomatic(ServerPlayer player, boolean enabled) {
         if (!active() || player == null) return reject("invalid_input", "Invalid player");
         return customization.setAutomatic(player.getUUID(), enabled)
                 ? OperationResult.success("automatic", "Automatic development " + (enabled ? "enabled" : "disabled"))
-                : reject("no_settlement", "Create a player settlement first");
+                : reject("no_settlement", NO_SETTLEMENT_MESSAGE);
     }
 
     public OperationResult setQueueLimit(ServerPlayer player, int limit) {
@@ -842,7 +858,7 @@ public final class PlayerSettlementService {
         try {
             return customization.setQueueLimit(player.getUUID(), limit)
                     ? OperationResult.success("queue_limit", "Controlled project queue limit set to " + limit)
-                    : reject("no_settlement", "Create a player settlement first");
+                    : reject("no_settlement", NO_SETTLEMENT_MESSAGE);
         } catch (IllegalArgumentException invalidLimit) {
             return reject("invalid_limit", invalidLimit.getMessage());
         }
@@ -851,7 +867,7 @@ public final class PlayerSettlementService {
     public OperationResult clearQueue(ServerPlayer player) {
         if (!active() || player == null) return reject("invalid_input", "Invalid player");
         PlayerSettlementSavedData.View profile = profile(player.getUUID());
-        if (profile == null) return reject("no_settlement", "Create a player settlement first");
+        if (profile == null) return reject("no_settlement", NO_SETTLEMENT_MESSAGE);
         Village village = village(profile.capital);
         ServerLevel level = level(profile.capital);
         if (village == null || level == null || !village.isControlledBy(player.getUUID())) {
@@ -1429,6 +1445,78 @@ public final class PlayerSettlementService {
         }
         return true;
     }
+
+    private static FoundationSite findFoundationSite(
+            ServerLevel level,
+            BlockPos origin,
+            VillageType type) {
+        if (level == null || origin == null || type == null) {
+            return new FoundationSite(null, 0, null);
+        }
+        int loadedRadius = type.radius() + 32;
+        int validatedSites = 0;
+        Component firstFailure = null;
+        for (BlockPos offset : foundationCandidateOffsets()) {
+            BlockPos candidate = origin.offset(offset);
+            FoundationProbe probe = probeFoundationSite(level, candidate, type, loadedRadius);
+            if (!probe.loaded()) continue;
+            validatedSites++;
+            if (probe.failure() == null) {
+                return new FoundationSite(probe.position(), validatedSites, firstFailure);
+            }
+            if (firstFailure == null) firstFailure = probe.failure();
+        }
+        return new FoundationSite(null, validatedSites, firstFailure);
+    }
+
+    static List<BlockPos> foundationCandidateOffsets() {
+        ArrayList<BlockPos> offsets = new ArrayList<>(MAX_FOUNDATION_SITE_ATTEMPTS);
+        offsets.add(BlockPos.ZERO);
+        for (int ring = FOUNDATION_SEARCH_STEP_BLOCKS;
+                ring <= FOUNDATION_SEARCH_RADIUS_BLOCKS && offsets.size() < MAX_FOUNDATION_SITE_ATTEMPTS;
+                ring += FOUNDATION_SEARCH_STEP_BLOCKS) {
+            for (int x = -ring;
+                    x <= ring && offsets.size() < MAX_FOUNDATION_SITE_ATTEMPTS;
+                    x += FOUNDATION_SEARCH_STEP_BLOCKS) {
+                offsets.add(new BlockPos(x, 0, -ring));
+                if (offsets.size() < MAX_FOUNDATION_SITE_ATTEMPTS) {
+                    offsets.add(new BlockPos(x, 0, ring));
+                }
+            }
+            for (int z = -ring + FOUNDATION_SEARCH_STEP_BLOCKS;
+                    z <= ring - FOUNDATION_SEARCH_STEP_BLOCKS
+                            && offsets.size() < MAX_FOUNDATION_SITE_ATTEMPTS;
+                    z += FOUNDATION_SEARCH_STEP_BLOCKS) {
+                offsets.add(new BlockPos(-ring, 0, z));
+                if (offsets.size() < MAX_FOUNDATION_SITE_ATTEMPTS) {
+                    offsets.add(new BlockPos(ring, 0, z));
+                }
+            }
+        }
+        return List.copyOf(offsets);
+    }
+
+    private static FoundationProbe probeFoundationSite(
+            ServerLevel level,
+            BlockPos candidate,
+            VillageType type,
+            int loadedRadius) {
+        int x = candidate.getX();
+        int z = candidate.getZ();
+        if (!level.hasChunk(x >> 4, z >> 4)) {
+            return new FoundationProbe(null, false, null);
+        }
+        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        BlockPos surface = new BlockPos(x, y, z);
+        if (!areaLoaded(level, surface, loadedRadius)) {
+            return new FoundationProbe(surface, false, null);
+        }
+        return new FoundationProbe(surface, true, VillageSpawner.validateSite(level, surface, type));
+    }
+
+    private record FoundationSite(BlockPos position, int validatedSites, Component firstFailure) {}
+
+    private record FoundationProbe(BlockPos position, boolean loaded, Component failure) {}
 
     private PlayerSettlementCustomizationSavedData.View customization(UUID owner) {
         if (customization == null || owner == null) return null;
