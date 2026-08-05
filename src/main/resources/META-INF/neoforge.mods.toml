@@ -15,7 +15,7 @@ config="millenaire-universalis.mixins.json"
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
-versionRange="[${neo_version}]"
+versionRange="${neo_version_range}"
 ordering="NONE"
 side="BOTH"
 
@@ -29,7 +29,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="millenaire"
 type="required"
-reason="Millenaire Universalis targets Millenaire 9.0.0-beta.2 on Minecraft 1.21.1."
-versionRange="[9.0.0-beta.2]"
+reason="Millenaire Universalis targets Millenaire ${millenaire_version} on Minecraft ${minecraft_version}."
+versionRange="${millenaire_version_range}"
 ordering="AFTER"
 side="BOTH"

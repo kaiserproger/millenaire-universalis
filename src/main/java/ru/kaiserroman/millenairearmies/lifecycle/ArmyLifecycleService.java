@@ -198,6 +198,8 @@ public final class ArmyLifecycleService {
                         ArmiesConfig.WORLD_MUTATION_SITE_ATTEMPTS,
                         ArmiesConfig.WORLD_MUTATION_MAX_ATTEMPTS,
                         ArmiesConfig.WORLD_MUTATION_RETRY_TICKS,
+                        ArmiesConfig.WORLD_MUTATION_DEFER_TICKS,
+                        ArmiesConfig.WORLD_MUTATION_MAX_DEFER_RUNS,
                         ArmiesConfig.WORLD_MUTATION_MIN_FOUNDING_DISTANCE,
                         ArmiesConfig.WORLD_MUTATION_MAX_FOUNDING_DISTANCE,
                         ArmiesConfig.WORLD_MUTATION_MIN_VILLAGE_DISTANCE,

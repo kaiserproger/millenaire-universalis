@@ -12,6 +12,8 @@ public final class MillenaireWorldMutationServiceSelfTest {
         commitsAndRetriesWithoutSkippingHead();
         exceptionsFailClosedAndEventuallyExhaust();
         finalRejectionAcknowledgesEvent();
+        deferralDoesNotConsumeAttempts();
+        deferralDemotesToRetryAfterBudget();
         System.out.println("Millenaire world mutation service self-test passed");
     }
 
@@ -33,7 +35,9 @@ public final class MillenaireWorldMutationServiceSelfTest {
                 },
                 2,
                 4,
-                10);
+                10,
+                5,
+                3);
 
         service.tick(100L);
         check(calls[0] == 2, "commit and retry consumed one bounded tick");
@@ -71,7 +75,9 @@ public final class MillenaireWorldMutationServiceSelfTest {
                 },
                 1,
                 2,
-                10);
+                10,
+                5,
+                3);
 
         service.tick(200L);
         check(calls[0] == 1, "first failing attempt executed");
@@ -96,11 +102,80 @@ public final class MillenaireWorldMutationServiceSelfTest {
                         MillenaireWorldMutationService.MutationResult.FINAL_REJECT,
                 1,
                 4,
-                10);
+                10,
+                5,
+                3);
         service.tick(300L);
         check(data.events().size() == 0, "final rejection acknowledged event");
         check(service.finalRejectedCount() == 1L, "final rejection metric");
         check(service.retryCount() == 0L, "final rejection did not schedule retry");
+    }
+
+    /** An unloaded world must not burn the retry budget that would eventually drop the event. */
+    private static void deferralDoesNotConsumeAttempts() {
+        SimulationSavedData data = new SimulationSavedData();
+        data.events().append(event(SimulationEventType.REFUGEE_FLOW, 1L));
+        int[] calls = {0};
+        MillenaireWorldMutationService service = new MillenaireWorldMutationService(
+                data,
+                (sequence, event, attempt, gameTime) -> {
+                    calls[0]++;
+                    return calls[0] < 3
+                            ? MillenaireWorldMutationService.MutationResult.DEFER
+                            : MillenaireWorldMutationService.MutationResult.COMMITTED;
+                },
+                1,
+                2,
+                10,
+                5,
+                100);
+
+        service.tick(400L);
+        check(calls[0] == 1, "first deferral executed");
+        check(data.events().size() == 1, "deferred event retained at head");
+        check(data.mutationAttempts() == 0, "deferral consumed no retry attempt");
+        check(data.nextMutationAttemptTick() == 405L, "deferral used the short fixed interval");
+        check(service.deferCount() == 1L && service.retryCount() == 0L, "deferral metric");
+
+        service.tick(404L);
+        check(calls[0] == 1, "executor not called before deferral deadline");
+
+        service.tick(405L);
+        check(calls[0] == 2, "second deferral executed");
+        check(data.mutationAttempts() == 0, "repeated deferral still consumed no attempt");
+        check(service.exhaustedRetryCount() == 0L, "deferral never exhausts the retry budget");
+
+        service.tick(410L);
+        check(calls[0] == 3 && data.events().size() == 0, "commit after the world loaded");
+        check(data.mutationSequence() == 0L, "commit cleared persisted state");
+    }
+
+    /** A head that can never load must not stall the FIFO forever. */
+    private static void deferralDemotesToRetryAfterBudget() {
+        SimulationSavedData data = new SimulationSavedData();
+        data.events().append(event(SimulationEventType.REFUGEE_FLOW, 1L));
+        MillenaireWorldMutationService service = new MillenaireWorldMutationService(
+                data,
+                (sequence, event, attempt, gameTime) ->
+                        MillenaireWorldMutationService.MutationResult.DEFER,
+                1,
+                2,
+                10,
+                5,
+                2);
+
+        service.tick(500L);
+        service.tick(505L);
+        check(service.deferCount() == 2L, "deferral budget consumed");
+        check(data.mutationAttempts() == 0, "budget not yet exceeded");
+
+        service.tick(510L);
+        check(service.retryCount() == 1L, "deferral demoted to retry past its budget");
+        check(data.mutationAttempts() == 1, "demotion consumed a retry attempt");
+
+        service.tick(520L);
+        check(data.events().size() == 0, "demoted head eventually exhausts and unblocks");
+        check(service.exhaustedRetryCount() == 1L, "exhaustion counted after demotion");
     }
 
     private static SimulationEvent event(SimulationEventType type, long settlementId) {

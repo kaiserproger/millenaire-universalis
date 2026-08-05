@@ -56,6 +56,8 @@ public final class MillenaireWorldMutationService {
     private final int eventsPerTick;
     private final int maximumAttempts;
     private final int retryTicks;
+    private final int deferTicks;
+    private final int maximumDeferRuns;
 
     private final long[] headSequence = new long[1];
     private final SimulationEvent[] headEvent = new SimulationEvent[1];
@@ -65,7 +67,12 @@ public final class MillenaireWorldMutationService {
     private long retryCount;
     private long exhaustedRetryCount;
     private long executorFailureCount;
+    private long deferCount;
     private int lastTickWorkUnits;
+
+    /** Consecutive deferrals of the current head. Session-scoped; never persisted. */
+    private long deferHeadSequence;
+    private int deferRuns;
 
     public MillenaireWorldMutationService(
             MillenaireVillageIndex villages,
@@ -79,6 +86,8 @@ public final class MillenaireWorldMutationService {
             int siteAttempts,
             int maximumAttempts,
             int retryTicks,
+            int deferTicks,
+            int maximumDeferRuns,
             int minimumFoundingDistance,
             int maximumFoundingDistance,
             int minimumVillageDistance,
@@ -104,7 +113,9 @@ public final class MillenaireWorldMutationService {
                         regionSizeBlocks),
                 eventsPerTick,
                 maximumAttempts,
-                retryTicks);
+                retryTicks,
+                deferTicks,
+                maximumDeferRuns);
     }
 
     MillenaireWorldMutationService(
@@ -112,11 +123,14 @@ public final class MillenaireWorldMutationService {
             MutationExecutor executor,
             int eventsPerTick,
             int maximumAttempts,
-            int retryTicks) {
+            int retryTicks,
+            int deferTicks,
+            int maximumDeferRuns) {
         if (data == null || executor == null) {
             throw new NullPointerException("world mutation dependency");
         }
-        if (eventsPerTick <= 0 || maximumAttempts <= 0 || retryTicks <= 0) {
+        if (eventsPerTick <= 0 || maximumAttempts <= 0 || retryTicks <= 0
+                || deferTicks <= 0 || maximumDeferRuns <= 0) {
             throw new IllegalArgumentException("Invalid world mutation bounds");
         }
         this.data = data;
@@ -124,6 +138,8 @@ public final class MillenaireWorldMutationService {
         this.eventsPerTick = eventsPerTick;
         this.maximumAttempts = maximumAttempts;
         this.retryTicks = retryTicks;
+        this.deferTicks = deferTicks;
+        this.maximumDeferRuns = maximumDeferRuns;
     }
 
     public void tick(long gameTime) {
@@ -155,6 +171,29 @@ public final class MillenaireWorldMutationService {
                 result = MutationResult.RETRY;
             }
             lastTickWorkUnits++;
+            if (result == MutationResult.DEFER) {
+                if (deferHeadSequence != sequence) {
+                    deferHeadSequence = sequence;
+                    deferRuns = 0;
+                }
+                if (deferRuns < maximumDeferRuns) {
+                    deferRuns++;
+                    deferCount++;
+                    data.scheduleMutationDefer(sequence, saturatedAdd(gameTime, deferTicks));
+                    return;
+                }
+                if (deferRuns == maximumDeferRuns) {
+                    // Latch the demotion for this head: once the budget is spent the ordinary
+                    // retry ladder owns it, so the queue cannot stall forever.
+                    deferRuns++;
+                    LOGGER.warn(
+                            "World mutation sequence {} type {} deferred {} times; demoting to retry",
+                            sequence,
+                            event.type(),
+                            maximumDeferRuns);
+                }
+                result = MutationResult.RETRY;
+            }
             if (result == MutationResult.RETRY) {
                 int nextAttempt = data.mutationAttempts() == Integer.MAX_VALUE
                         ? Integer.MAX_VALUE
@@ -186,6 +225,10 @@ public final class MillenaireWorldMutationService {
         data.events().acknowledgeThrough(sequence);
         data.completeMutationAttempt(sequence);
         data.markChanged();
+        if (deferHeadSequence == sequence) {
+            deferHeadSequence = 0L;
+            deferRuns = 0;
+        }
     }
 
     public long committedCount() { return committedCount; }
@@ -193,15 +236,17 @@ public final class MillenaireWorldMutationService {
     public long retryCount() { return retryCount; }
     public long exhaustedRetryCount() { return exhaustedRetryCount; }
     public long executorFailureCount() { return executorFailureCount; }
+    public long deferCount() { return deferCount; }
     public int lastTickWorkUnits() { return lastTickWorkUnits; }
 
     public void logShutdownMetrics() {
         LOGGER.info(
-                "[BANNEROK_WORLD_MUTATION_METRICS] committed={} final_rejected={} retries={} exhausted={} executor_failures={} pending={} current_sequence={} attempts={} next_attempt_tick={} last_work={}",
+                "[BANNEROK_WORLD_MUTATION_METRICS] committed={} final_rejected={} retries={} exhausted={} deferred={} executor_failures={} pending={} current_sequence={} attempts={} next_attempt_tick={} last_work={}",
                 committedCount,
                 finalRejectedCount,
                 retryCount,
                 exhaustedRetryCount,
+                deferCount,
                 executorFailureCount,
                 data.events().size(),
                 data.mutationSequence(),
@@ -213,7 +258,13 @@ public final class MillenaireWorldMutationService {
     enum MutationResult {
         COMMITTED,
         FINAL_REJECT,
-        RETRY
+        /** Transient failure. Consumes an attempt and escalates the backoff. */
+        RETRY,
+        /**
+         * Not applicable yet: the affected villages exist but are not loaded. Rescheduled on a
+         * short fixed interval without consuming a retry attempt.
+         */
+        DEFER
     }
 
     @FunctionalInterface
@@ -323,7 +374,7 @@ public final class MillenaireWorldMutationService {
             }
             UUID sourceUuid = data.keys().settlement(sourceSettlement);
             VillageLocation source = findVillage(sourceUuid);
-            if (source == null) return MutationResult.RETRY;
+            if (source == null) return MutationResult.DEFER;
             ResourceLocation culture = data.keys().culture(event.cultureKey());
             if (!culture.equals(source.village().getCultureId())
                     || source.village().isPlayerControlled()
@@ -435,7 +486,7 @@ public final class MillenaireWorldMutationService {
             VillageLocation destination = findVillage(destinationUuid);
             if (source == null || destination == null) {
                 return state.physicallyPresentAt(sourceRow) && state.physicallyPresentAt(destinationRow)
-                        ? MutationResult.RETRY
+                        ? MutationResult.DEFER
                         : MutationResult.COMMITTED;
             }
             if (source.level() != destination.level()) return MutationResult.COMMITTED;
@@ -446,11 +497,11 @@ public final class MillenaireWorldMutationService {
                 return MutationResult.FINAL_REJECT;
             }
             if (!source.village().isActive() || !destination.village().isActive()) {
-                return MutationResult.RETRY;
+                return MutationResult.DEFER;
             }
             BuildingInstance destinationHome = destination.village().getTownhall();
             if (destinationHome == null || !destinationHome.isOperational()) {
-                return MutationResult.RETRY;
+                return MutationResult.DEFER;
             }
 
             long room = Math.max(0L,
@@ -523,7 +574,7 @@ public final class MillenaireWorldMutationService {
                 return MutationResult.FINAL_REJECT;
             }
             if (!village.isActive() || playersNear(target.level(), village.getCenter())) {
-                return MutationResult.RETRY;
+                return MutationResult.DEFER;
             }
 
             VillageSavedData savedData = VillageSavedData.get(target.level());
