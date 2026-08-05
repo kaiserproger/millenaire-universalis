@@ -318,6 +318,42 @@ tasks.register('runUniversalisIdentitySelfTest', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runPlayerSettlementPolicySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks player-settlement tiers, territory growth and construction unlocks.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.settlement.PlayerSettlementPolicySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPlayerSettlementSavedDataSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks player-settlement persistence and monotonic territorial growth.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PlayerSettlementSavedDataSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPlayerSettlementCustomizationSavedDataSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks player-selected development profiles and controlled queue settings.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.persistence.PlayerSettlementCustomizationSavedDataSelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
+tasks.register('runPlayerSettlementTerritoryRegistrySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks loaded-chunk territory capping without force-loading.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.server.settlement.PlayerSettlementTerritoryRegistrySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runRealmCoreSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs the Realm kernel self-test from the unified addon source set.'
@@ -337,7 +373,10 @@ tasks.register('runWorldSimulationSelfTest', JavaExec) {
 }
 
 tasks.named('check') {
-    dependsOn 'runUniversalisIdentitySelfTest', 'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
+    dependsOn 'runUniversalisIdentitySelfTest', 'runPlayerSettlementPolicySelfTest',
+            'runPlayerSettlementSavedDataSelfTest', 'runPlayerSettlementCustomizationSavedDataSelfTest',
+            'runPlayerSettlementTerritoryRegistrySelfTest', 'runRealmCoreSelfTest',
+            'runWorldSimulationSelfTest',
             'runArmyUiStateSelfTest', 'validateArmyUiResources',
             'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest',
             'runPackedGarrisonStateSelfTest', 'runGarrisonExecutionPolicySelfTest',

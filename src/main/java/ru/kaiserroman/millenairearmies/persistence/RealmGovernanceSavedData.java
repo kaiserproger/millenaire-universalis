@@ -59,6 +59,7 @@ public final class RealmGovernanceSavedData extends SavedData {
     public boolean canFoundCapital(UUID owner, UUID capital) {
         return owner != null
                 && capital != null
+                && size < MAX_ASSIGNMENTS
                 && findController(owner.getMostSignificantBits(), owner.getLeastSignificantBits()) < 0
                 && findVillage(capital.getMostSignificantBits(), capital.getLeastSignificantBits()) < 0;
     }
@@ -81,6 +82,20 @@ public final class RealmGovernanceSavedData extends SavedData {
         return true;
     }
 
+    public boolean canReserveRegion(UUID controller, UUID village) {
+        if (controller == null || village == null || size == MAX_ASSIGNMENTS) return false;
+        return findController(
+                        controller.getMostSignificantBits(),
+                        controller.getLeastSignificantBits()) < 0
+                && findVillage(
+                        village.getMostSignificantBits(),
+                        village.getLeastSignificantBits()) < 0;
+    }
+
+    public boolean canAttachRegion(UUID head, UUID controller, UUID village) {
+        return head != null && findCapital(head) >= 0 && canReserveRegion(controller, village);
+    }
+
     /** Adds a region using the realm's default political relationship. */
     public boolean attachRegion(UUID head, UUID controller, UUID village) {
         int capital = findCapital(head);
@@ -95,17 +110,13 @@ public final class RealmGovernanceSavedData extends SavedData {
 
     public boolean attachRegion(UUID head, UUID controller, UUID village, byte role) {
         requireRegionalRole(role);
-        if (head == null || controller == null || village == null || findCapital(head) < 0) {
+        if (!canAttachRegion(head, controller, village)) {
             return false;
         }
         long controllerMostBits = controller.getMostSignificantBits();
         long controllerLeastBits = controller.getLeastSignificantBits();
         long villageMostBits = village.getMostSignificantBits();
         long villageLeastBits = village.getLeastSignificantBits();
-        if (findController(controllerMostBits, controllerLeastBits) >= 0
-                || findVillage(villageMostBits, villageLeastBits) >= 0) {
-            return false;
-        }
         append(
                 head.getMostSignificantBits(),
                 head.getLeastSignificantBits(),

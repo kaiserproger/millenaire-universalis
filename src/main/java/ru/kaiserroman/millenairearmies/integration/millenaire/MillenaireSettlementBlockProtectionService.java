@@ -12,7 +12,9 @@ import org.millenaire.village.Village;
 import ru.kaiserroman.millenaire.realm.RealmRegistry;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.lifecycle.ArmyLifecycleService;
+import ru.kaiserroman.millenairearmies.persistence.PlayerSettlementSavedData;
 import ru.kaiserroman.millenairearmies.persistence.RealmSavedData;
+import ru.kaiserroman.millenairearmies.server.settlement.PlayerSettlementService;
 import ru.kaiserroman.millenairearmies.server.execution.ArmyOrderExecutionBridge;
 
 /**
@@ -39,8 +41,16 @@ public final class MillenaireSettlementBlockProtectionService {
     private int[] maxX = new int[MIN_CAPACITY];
     private int[] maxY = new int[MIN_CAPACITY];
     private int[] maxZ = new int[MIN_CAPACITY];
+    private int[] breachMinX = new int[MIN_CAPACITY];
+    private int[] breachMinZ = new int[MIN_CAPACITY];
+    private int[] breachMaxX = new int[MIN_CAPACITY];
+    private int[] breachMaxZ = new int[MIN_CAPACITY];
     private int size;
     private long indexedReconciliation = Long.MIN_VALUE;
+    private long indexedPlayerSettlementRevision = Long.MIN_VALUE;
+    private long indexedRealmRegistryRevision = Long.MIN_VALUE;
+    private final PlayerSettlementSavedData.View playerSettlementView =
+            new PlayerSettlementSavedData.View();
 
     public MillenaireSettlementBlockProtectionService(ArmyLifecycleService lifecycle) {
         this.lifecycle = lifecycle;
@@ -60,7 +70,7 @@ public final class MillenaireSettlementBlockProtectionService {
             return SettlementBlockProtectionPolicy.Decision.OUTSIDE;
         }
         refreshBoundsIfNeeded();
-        int row = containingVillage(level, position);
+        int row = containingVillage(player, level, position);
         if (row < 0) return SettlementBlockProtectionPolicy.Decision.OUTSIDE;
 
         Village village = villages[row];
@@ -87,8 +97,23 @@ public final class MillenaireSettlementBlockProtectionService {
 
     private void refreshBoundsIfNeeded() {
         long reconciliation = lifecycle.villageIndex().reconciliationCount();
-        if (indexedReconciliation == reconciliation) return;
+        PlayerSettlementService playerSettlements = lifecycle.playerSettlementService();
+        PlayerSettlementSavedData profiles = playerSettlements == null ? null : playerSettlements.profiles();
+        RealmSavedData realmData = lifecycle.realmData();
+        long playerSettlementRevision = profiles == null
+                ? Long.MIN_VALUE
+                : profiles.territoryRevision();
+        long realmRegistryRevision = realmData == null
+                ? Long.MIN_VALUE
+                : realmData.registry().revision();
+        if (indexedReconciliation == reconciliation
+                && indexedPlayerSettlementRevision == playerSettlementRevision
+                && indexedRealmRegistryRevision == realmRegistryRevision) {
+            return;
+        }
         indexedReconciliation = reconciliation;
+        indexedPlayerSettlementRevision = playerSettlementRevision;
+        indexedRealmRegistryRevision = realmRegistryRevision;
         size = 0;
         for (villageCursor.reset(); villageCursor.advance(); ) {
             Village village = villageCursor.village();
@@ -104,31 +129,69 @@ public final class MillenaireSettlementBlockProtectionService {
             ensureCapacity(size + 1);
             levels[size] = level;
             villages[size] = village;
-            minX[size] = floor(bounds.minX);
-            minY[size] = floor(bounds.minY);
-            minZ[size] = floor(bounds.minZ);
-            maxX[size] = ceilInclusive(bounds.maxX);
-            maxY[size] = ceilInclusive(bounds.maxY);
-            maxZ[size] = ceilInclusive(bounds.maxZ);
+            int boundedMinX = floor(bounds.minX);
+            int boundedMinZ = floor(bounds.minZ);
+            int boundedMaxX = ceilInclusive(bounds.maxX);
+            int boundedMaxZ = ceilInclusive(bounds.maxZ);
+            breachMinX[size] = boundedMinX;
+            breachMinZ[size] = boundedMinZ;
+            breachMaxX[size] = boundedMaxX;
+            breachMaxZ[size] = boundedMaxZ;
+            boolean expandedTerritory = false;
+            if (profiles != null && realmData != null
+                    && village.getId() != null && village.getId().uuid() != null) {
+                UUID villageId = village.getId().uuid();
+                long realmId = realmData.realmForSettlement(villageId);
+                boolean hasProfile = profiles.viewCapital(villageId, playerSettlementView)
+                        || realmId != RealmRegistry.NO_REALM
+                                && profiles.viewRealm(realmId, playerSettlementView);
+                if (hasProfile && village.isControlledBy(playerSettlementView.owner)) {
+                    int radius = playerSettlementView.territoryRadius;
+                    BlockPos center = village.getCenter();
+                    boundedMinX = Math.min(boundedMinX, center.getX() - radius);
+                    boundedMinZ = Math.min(boundedMinZ, center.getZ() - radius);
+                    boundedMaxX = Math.max(boundedMaxX, center.getX() + radius);
+                    boundedMaxZ = Math.max(boundedMaxZ, center.getZ() + radius);
+                    expandedTerritory = true;
+                }
+            }
+            minX[size] = boundedMinX;
+            minY[size] = expandedTerritory ? level.getMinBuildHeight() : floor(bounds.minY);
+            minZ[size] = boundedMinZ;
+            maxX[size] = boundedMaxX;
+            maxY[size] = expandedTerritory ? level.getMaxBuildHeight() - 1 : ceilInclusive(bounds.maxY);
+            maxZ[size] = boundedMaxZ;
             size++;
         }
         Arrays.fill(levels, size, levels.length, null);
         Arrays.fill(villages, size, villages.length, null);
     }
 
-    private int containingVillage(ServerLevel level, BlockPos position) {
+    private int containingVillage(ServerPlayer player, ServerLevel level, BlockPos position) {
         int x = position.getX();
         int y = position.getY();
         int z = position.getZ();
+        int nearest = -1;
+        long nearestDistance = Long.MAX_VALUE;
         for (int row = 0; row < size; row++) {
-            if (levels[row] == level
-                    && x >= minX[row] && x <= maxX[row]
-                    && y >= minY[row] && y <= maxY[row]
-                    && z >= minZ[row] && z <= maxZ[row]) {
-                return row;
+            if (levels[row] != level
+                    || x < minX[row] || x > maxX[row]
+                    || y < minY[row] || y > maxY[row]
+                    || z < minZ[row] || z > maxZ[row]) {
+                continue;
+            }
+            Village village = villages[row];
+            if (authorized(player, village)) return row;
+            BlockPos center = village.getCenter();
+            long dx = (long) center.getX() - x;
+            long dz = (long) center.getZ() - z;
+            long distance = dx * dx + dz * dz;
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = row;
             }
         }
-        return -1;
+        return nearest;
     }
 
     private boolean authorized(ServerPlayer player, Village village) {
@@ -159,8 +222,8 @@ public final class MillenaireSettlementBlockProtectionService {
         int x = position.getX();
         int z = position.getZ();
         int edgeDistance = Math.min(
-                Math.min(x - minX[row], maxX[row] - x),
-                Math.min(z - minZ[row], maxZ[row] - z));
+                Math.min(x - breachMinX[row], breachMaxX[row] - x),
+                Math.min(z - breachMinZ[row], breachMaxZ[row] - z));
         return edgeDistance >= 0
                 && edgeDistance <= ArmiesConfig.SETTLEMENT_SIEGE_BREACH_BAND_BLOCKS;
     }
@@ -195,6 +258,10 @@ public final class MillenaireSettlementBlockProtectionService {
         maxX = Arrays.copyOf(maxX, capacity);
         maxY = Arrays.copyOf(maxY, capacity);
         maxZ = Arrays.copyOf(maxZ, capacity);
+        breachMinX = Arrays.copyOf(breachMinX, capacity);
+        breachMinZ = Arrays.copyOf(breachMinZ, capacity);
+        breachMaxX = Arrays.copyOf(breachMaxX, capacity);
+        breachMaxZ = Arrays.copyOf(breachMaxZ, capacity);
     }
 
     private static int floor(double value) {

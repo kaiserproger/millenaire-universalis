@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8.7",
+  "package": "ru.kaiserroman.millenairearmies.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "VillageGrowthManagerAccessor",
+    "VillageGrowthTerritoryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

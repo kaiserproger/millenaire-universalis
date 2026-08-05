@@ -1,5 +1,6 @@
 package ru.kaiserroman.millenairearmies.server.realm;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
 import ru.kaiserroman.millenaire.realm.Constitution;
@@ -8,6 +9,7 @@ import ru.kaiserroman.millenaire.realm.RealmMemberKind;
 import ru.kaiserroman.millenaire.realm.RealmRegistry;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
 import ru.kaiserroman.millenairearmies.persistence.PlayerRealmSavedData;
+import ru.kaiserroman.millenairearmies.persistence.PlayerSettlementSavedData;
 import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 import ru.kaiserroman.millenairearmies.persistence.RealmSavedData;
 import ru.kaiserroman.millenairearmies.persistence.SimulationSavedData;
@@ -117,6 +119,52 @@ public final class RealmAdministrationService {
         return realmId;
     }
 
+    /** Cheap preflight used before an irreversible physical Village spawn. */
+    public boolean canFoundPlayerRealm(UUID owner) {
+        return canFoundPlayerRealm(owner, 1);
+    }
+
+    /** Capacity-aware preflight for one capital plus generated child settlements. */
+    public boolean canFoundPlayerRealm(UUID owner, int settlementCount) {
+        if (owner == null || settlementCount <= 0 || settlementCount > PlayerSettlementSavedData.MAX_SETTLEMENTS) {
+            return false;
+        }
+        int requiredMembers = settlementCount + 1; // settlements plus the player subject
+        int requiredSubjects = settlementCount + 1;
+        return realms.realmForPlayer(owner) == RealmRegistry.NO_REALM
+                && !legacyRealms.exists(owner)
+                && legacyRealms.size() < PlayerRealmSavedData.MAX_REALMS
+                && legacyGovernance.size()
+                        <= RealmGovernanceSavedData.MAX_ASSIGNMENTS - settlementCount
+                && realms.registry().realmCount() < RealmSavedData.MAX_REALMS
+                && realms.registry().memberCount()
+                        <= RealmSavedData.MAX_MEMBERS - requiredMembers
+                && realms.keys().size()
+                        <= RealmSavedData.MAX_SUBJECTS - requiredSubjects;
+    }
+
+    /** Renames canonical and compatibility metadata for the player's own Realm. */
+    public boolean renamePlayerRealm(UUID actor, String name) {
+        if (actor == null || name == null) throw new IllegalArgumentException("Invalid Realm rename");
+        long actorSubject = realms.keys().findPlayer(actor);
+        if (actorSubject == 0L) return false;
+        long realmId = realms.registry().realmOfMember(actorSubject);
+        if (realmId == RealmRegistry.NO_REALM || !realms.registry().exists(realmId)) return false;
+        long capital = realms.registry().capitalMemberId(realmId);
+        if (realms.registry().memberControllerId(capital) != actorSubject) return false;
+        boolean changed = realms.upsertMetadata(
+                realmId,
+                name,
+                realms.taxRate(realmId),
+                realms.treasury(realmId),
+                realms.capturedSettlementCount(realmId),
+                realms.isLegacy(realmId));
+        boolean compatibilityUpdated = legacyRealms.rename(actor, name);
+        if (!compatibilityUpdated) compatibilityMismatchCount++;
+        if (changed) realms.markChanged();
+        return true;
+    }
+
     /** Canonical head-of-state tax update with best-effort compatibility dual-write. */
     public boolean setTaxRate(UUID actor, int taxRate) {
         if (actor == null || taxRate < 0 || taxRate > 25) {
@@ -142,6 +190,73 @@ public final class RealmAdministrationService {
         if (changed) realms.markChanged();
         taxChangeCount++;
         return true;
+    }
+
+    /** Preflight for a capture that must also remain commandable through the compatibility store. */
+    public boolean canRecordCapture(UUID actor, UUID settlement) {
+        if (actor == null || settlement == null) return false;
+        long realmId = realms.realmForPlayer(actor);
+        if (realmId == RealmRegistry.NO_REALM
+                || realms.name(realmId) == null
+                || !legacyRealms.exists(actor)) {
+            return false;
+        }
+        return legacyGovernance.canCommandSettlement(actor, settlement)
+                || legacyGovernance.canAttachRegion(
+                        actor,
+                        governorId(actor, settlement),
+                        settlement);
+    }
+
+    public boolean canAttachFoundedRegion(UUID actor, UUID settlement) {
+        return actor != null && settlement != null
+                && legacyGovernance.canReserveRegion(governorId(actor, settlement), settlement);
+    }
+
+    /** Mirrors a generated child settlement without incrementing conquest history. */
+    public boolean attachFoundedRegion(UUID actor, UUID settlement) {
+        if (actor == null || settlement == null) return false;
+        long actorRealm = realms.realmForPlayer(actor);
+        return actorRealm != RealmRegistry.NO_REALM
+                && realms.realmForSettlement(settlement) == actorRealm
+                && mirrorGovernorRegion(actor, settlement);
+    }
+
+    /** Records a successfully committed settlement capture in canonical and compatibility metadata. */
+    public boolean recordCapture(UUID actor) {
+        return recordCapture(actor, null);
+    }
+
+    /** Mirrors a captured settlement as a governor-led legacy region when possible. */
+    public boolean recordCapture(UUID actor, UUID settlement) {
+        if (actor == null) return false;
+        long realmId = realms.realmForPlayer(actor);
+        if (realmId == RealmRegistry.NO_REALM || !legacyRealms.exists(actor)) return false;
+        if (settlement != null && !canRecordCapture(actor, settlement)) return false;
+        if (!realms.recordCapture(realmId)) return false;
+        legacyRealms.recordCapture(actor);
+        if (settlement != null && !mirrorGovernorRegion(actor, settlement)) {
+            compatibilityMismatchCount++;
+            throw new IllegalStateException(
+                    "Preflighted captured settlement could not join compatibility governance");
+        }
+        realms.markChanged();
+        return true;
+    }
+
+    private boolean mirrorGovernorRegion(UUID actor, UUID settlement) {
+        if (legacyGovernance.canCommandSettlement(actor, settlement)) return true;
+        return legacyGovernance.attachRegion(
+                actor,
+                governorId(actor, settlement),
+                settlement,
+                RealmGovernanceSavedData.ROLE_GOVERNOR);
+    }
+
+    private static UUID governorId(UUID actor, UUID settlement) {
+        return UUID.nameUUIDFromBytes(
+                ("millenaire-universalis:governor:" + actor + ':' + settlement)
+                        .getBytes(StandardCharsets.UTF_8));
     }
 
     public long foundationCount() { return foundationCount; }

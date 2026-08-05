@@ -9,6 +9,9 @@ displayName="${mod_name}"
 authors="Bannerok"
 description='''${mod_description}'''
 
+[[mixins]]
+config="millenaire-universalis.mixins.json"
+
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"

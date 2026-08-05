@@ -29,6 +29,7 @@ import ru.kaiserroman.millenairearmies.server.command.MillArmiesCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesFactionCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesRealmCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesRecruitmentCommands;
+import ru.kaiserroman.millenairearmies.server.command.MillArmiesSettlementCommands;
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesSimulationCommands;
 import ru.kaiserroman.millenairearmies.server.integration.ArmiesIntegrationBridge;
 
@@ -77,6 +78,7 @@ public final class SarvarMillenaireArmies {
         MillArmiesRecruitmentCommands.register(event.getDispatcher(), lifecycle.recruitmentService());
         MillArmiesSimulationCommands.register(event.getDispatcher(), lifecycle);
         MillArmiesRealmCommands.register(event.getDispatcher(), lifecycle);
+        MillArmiesSettlementCommands.register(event.getDispatcher(), lifecycle);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)

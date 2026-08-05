@@ -55,6 +55,8 @@ public final class RealmAdministrationServiceSelfTest {
                 simulation,
                 legacyRealms,
                 legacyGovernance);
+        check(service.canFoundPlayerRealm(owner, 2),
+                "capacity-aware foundation preflight accepts capital plus hamlet");
         long realmId = service.foundPlayerRealm(
                 owner,
                 capital,
@@ -94,6 +96,42 @@ public final class RealmAdministrationServiceSelfTest {
         check(realms.taxRate(realmId) == 17, "canonical tax changed");
         check(legacyRealms.read(owner, legacyView) && legacyView.taxRate() == 17,
                 "compatibility tax changed");
+
+        long ownerSubject = realms.keys().findPlayer(owner);
+        UUID generatedHamlet = uuid(104);
+        long generatedSubject = realms.keys().internSettlement(generatedHamlet);
+        check(realms.registry().addMember(
+                realmId,
+                generatedSubject,
+                ru.kaiserroman.millenaire.realm.RealmMemberKind.PLAYER_SETTLEMENT,
+                ownerSubject,
+                700), "generated hamlet attached canonically");
+        check(service.attachFoundedRegion(owner, generatedHamlet),
+                "generated hamlet mirrored without conquest");
+        check(legacyGovernance.canCommandSettlement(owner, generatedHamlet),
+                "head commands generated governor-led hamlet");
+        check(realms.capturedSettlementCount(realmId) == 0,
+                "generated hamlet is not recorded as a capture");
+
+        UUID captured = uuid(103);
+        check(service.canRecordCapture(owner, captured),
+                "capture compatibility preflight accepts a free governor slot");
+        long capturedSubject = realms.keys().internSettlement(captured);
+        check(realms.registry().addMember(
+                realmId,
+                capturedSubject,
+                ru.kaiserroman.millenaire.realm.RealmMemberKind.PLAYER_SETTLEMENT,
+                ownerSubject,
+                650), "captured settlement attached canonically");
+        check(service.recordCapture(owner, captured), "capture metadata recorded");
+        check(realms.capturedSettlementCount(realmId) == 1, "canonical capture count changed");
+        check(legacyRealms.read(owner, legacyView) && legacyView.capturedSettlements() == 1,
+                "compatibility capture count changed");
+        check(legacyGovernance.canCommandSettlement(owner, captured),
+                "head commands deterministic governor-led captured region");
+        check(legacyGovernance.readVillage(captured, assignment)
+                        && assignment.role() == RealmGovernanceSavedData.ROLE_GOVERNOR,
+                "captured region mirrored as governor-led");
 
         check(service.foundPlayerRealm(
                         owner,

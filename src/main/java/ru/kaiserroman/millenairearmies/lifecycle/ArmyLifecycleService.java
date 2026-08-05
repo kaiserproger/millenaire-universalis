@@ -51,6 +51,7 @@ import ru.kaiserroman.millenairearmies.server.realm.RealmEvolutionService;
 import ru.kaiserroman.millenairearmies.server.realm.RealmHistoricalService;
 import ru.kaiserroman.millenairearmies.server.realm.RealmStateDecisionService;
 import ru.kaiserroman.millenairearmies.server.service.ArmyCommandService;
+import ru.kaiserroman.millenairearmies.server.settlement.PlayerSettlementService;
 import ru.kaiserroman.millenairearmies.server.supply.ArmySupplyChestService;
 import ru.kaiserroman.millenairearmies.server.telemetry.StrategicPhaseTelemetry;
 import ru.kaiserroman.millenairearmies.server.unit.UnitDescriptorCatalog;
@@ -95,6 +96,7 @@ public final class ArmyLifecycleService {
     private MillenaireDynamicTradeService dynamicTradeService;
     private MillenairePhysicalProjectionService physicalProjectionService;
     private RealmAdministrationService realmAdministrationService;
+    private PlayerSettlementService playerSettlementService;
     private AutonomousRealmLifecycleService autonomousRealmLifecycleService;
     private RealmEvolutionService realmEvolutionService;
     private RealmHistoricalService realmHistoricalService;
@@ -314,6 +316,12 @@ public final class ArmyLifecycleService {
                 simulationData,
                 legacyPlayerRealms,
                 legacyRealmGovernance);
+        playerSettlementService = new PlayerSettlementService(
+                villageIndex,
+                realmData,
+                simulationData,
+                realmAdministrationService);
+        playerSettlementService.start(startingServer);
         if (ArmiesConfig.LOGISTICS_INVENTORY_PROJECTION_ENABLED) {
             settlementEconomy = new SettlementEconomyEngine(
                     savedData.settlementEconomy(),
@@ -553,6 +561,9 @@ public final class ArmyLifecycleService {
         if (realmStateDecisionService != null) {
             realmStateDecisionService.tick(gameTime);
         }
+        if (playerSettlementService != null) {
+            playerSettlementService.tick(gameTime);
+        }
         if (autonomousRealmLifecycleService != null) {
             autonomousRealmLifecycleService.tick(gameTime);
         }
@@ -759,6 +770,19 @@ public final class ArmyLifecycleService {
                             + realmData.diplomacy().estimatedPrimitiveBytes()
                             + realmData.keys().estimatedPrimitiveBytes());
         }
+        if (playerSettlementService != null) {
+            LOGGER.info(
+                    "[BANNEROK_PLAYER_SETTLEMENT_METRICS] settlements={} migrated={} founded={} manual_queued={} automatic_queued={} rejected={}",
+                    playerSettlementService.profiles() == null ? 0 : playerSettlementService.profiles().size(),
+                    playerSettlementService.migratedProfileCount(),
+                    playerSettlementService.foundedCount(),
+                    playerSettlementService.manualProjectCount(),
+                    playerSettlementService.automaticProjectCount(),
+                    playerSettlementService.rejectedCount());
+            playerSettlementService.stop();
+        }
+        playerSettlementService = null;
+        realmAdministrationService = null;
         legacyRealmMirror = null;
         legacyPlayerRealms = null;
         legacyRealmGovernance = null;
@@ -867,6 +891,10 @@ public final class ArmyLifecycleService {
 
     public RealmSavedData realmData() {
         return realmData;
+    }
+
+    public PlayerSettlementService playerSettlementService() {
+        return playerSettlementService;
     }
 
     public RealmEvolutionService realmEvolutionService() {
