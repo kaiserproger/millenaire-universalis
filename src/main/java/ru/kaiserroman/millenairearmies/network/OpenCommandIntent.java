@@ -4,13 +4,13 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Client request to open one of the strategic views; the server still decides whether it may. */
 public record OpenCommandIntent(byte view, int contextHandle, long knownRevision)
         implements CustomPacketPayload {
     public static final Type<OpenCommandIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "open_command"));
+            UniversalisIds.MOD_ID, "open_command"));
     public static final StreamCodec<RegistryFriendlyByteBuf, OpenCommandIntent> STREAM_CODEC = StreamCodec.of(
             OpenCommandIntent::encode, OpenCommandIntent::decode);
 

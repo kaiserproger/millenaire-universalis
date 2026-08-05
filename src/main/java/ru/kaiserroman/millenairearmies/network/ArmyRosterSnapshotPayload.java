@@ -6,7 +6,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /**
  * Server-authoritative projection of player-controlled settlements and currently recruitable NPCs.
@@ -59,7 +59,7 @@ public record ArmyRosterSnapshotPayload(
     public static final int MAX_TOTAL_UTF8_BYTES = 512 * 1024;
 
     public static final Type<ArmyRosterSnapshotPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "roster_snapshot"));
+            UniversalisIds.MOD_ID, "roster_snapshot"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ArmyRosterSnapshotPayload> STREAM_CODEC = StreamCodec.of(
             ArmyRosterSnapshotPayload::encode, ArmyRosterSnapshotPayload::decode);
 

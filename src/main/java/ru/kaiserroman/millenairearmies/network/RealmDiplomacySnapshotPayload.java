@@ -8,7 +8,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import ru.kaiserroman.millenaire.realm.DiplomaticStatus;
 import ru.kaiserroman.millenaire.realm.WarGoal;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Bounded directed canonical Realm relations visible to one player Realm. */
 public record RealmDiplomacySnapshotPayload(
@@ -33,7 +33,7 @@ public record RealmDiplomacySnapshotPayload(
 
     public static final Type<RealmDiplomacySnapshotPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(
-                    SarvarMillenaireArmies.MOD_ID, "realm_diplomacy_snapshot"));
+                    UniversalisIds.MOD_ID, "realm_diplomacy_snapshot"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RealmDiplomacySnapshotPayload> STREAM_CODEC =
             StreamCodec.of(
                     RealmDiplomacySnapshotPayload::encode,

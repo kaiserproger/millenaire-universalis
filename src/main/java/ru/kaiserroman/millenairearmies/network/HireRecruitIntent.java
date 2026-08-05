@@ -4,14 +4,14 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Authenticated request to pay Millenaire's one-day hire cost and form/join a retinue. */
 public record HireRecruitIntent(
         int actionId, long villagerUuidMost, long villagerUuidLeast, long expectedRevision)
         implements CustomPacketPayload {
     public static final Type<HireRecruitIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "hire_recruit"));
+            UniversalisIds.MOD_ID, "hire_recruit"));
     public static final StreamCodec<RegistryFriendlyByteBuf, HireRecruitIntent> STREAM_CODEC = StreamCodec.of(
             HireRecruitIntent::encode, HireRecruitIntent::decode);
 

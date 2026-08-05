@@ -6,7 +6,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /**
  * Bounded, visibility-filtered presentation metadata for faction rows.
@@ -37,7 +37,7 @@ public record FactionMetadataPayload(
     public static final int MAX_TOTAL_UTF8_BYTES = 256 * 1024;
 
     public static final Type<FactionMetadataPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "faction_metadata"));
+            UniversalisIds.MOD_ID, "faction_metadata"));
     public static final StreamCodec<RegistryFriendlyByteBuf, FactionMetadataPayload> STREAM_CODEC = StreamCodec.of(
             FactionMetadataPayload::encode, FactionMetadataPayload::decode);
 

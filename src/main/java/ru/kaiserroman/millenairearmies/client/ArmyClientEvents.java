@@ -17,7 +17,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.millenaire.client.gui.ControlledMilitaryScreen;
 import org.lwjgl.glfw.GLFW;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.client.ui.ArmyCommandHud;
 import ru.kaiserroman.millenairearmies.client.ui.MillenaireCommandScreen;
 
@@ -26,7 +26,7 @@ public final class ArmyClientEvents {
     private ArmyClientEvents() {
     }
 
-    @EventBusSubscriber(modid = SarvarMillenaireArmies.MOD_ID, value = Dist.CLIENT)
+    @EventBusSubscriber(modid = UniversalisIds.MOD_ID, value = Dist.CLIENT)
     public static final class Registration {
         private static final KeyMapping OPEN_COMMAND = new KeyMapping(
                 "key.millenaire_armies.open_command",
@@ -50,7 +50,7 @@ public final class ArmyClientEvents {
         }
     }
 
-    @EventBusSubscriber(modid = SarvarMillenaireArmies.MOD_ID, value = Dist.CLIENT)
+    @EventBusSubscriber(modid = UniversalisIds.MOD_ID, value = Dist.CLIENT)
     public static final class GameEvents {
         private GameEvents() {
         }

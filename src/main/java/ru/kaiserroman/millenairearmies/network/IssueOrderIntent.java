@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** An army order proposal. Dimension, ownership, visibility and authority are server-derived. */
 public record IssueOrderIntent(
@@ -19,7 +19,7 @@ public record IssueOrderIntent(
         byte flags)
         implements CustomPacketPayload {
     public static final Type<IssueOrderIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "issue_order"));
+            UniversalisIds.MOD_ID, "issue_order"));
     public static final StreamCodec<RegistryFriendlyByteBuf, IssueOrderIntent> STREAM_CODEC = StreamCodec.of(
             IssueOrderIntent::encode, IssueOrderIntent::decode);
 

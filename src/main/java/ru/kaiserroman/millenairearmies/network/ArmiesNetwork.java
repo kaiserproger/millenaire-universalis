@@ -8,7 +8,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.client.state.ClientArmyState;
 import ru.kaiserroman.millenairearmies.client.state.ClientFactionMetadataState;
 import ru.kaiserroman.millenairearmies.client.state.ClientArmyRosterState;
@@ -18,7 +18,7 @@ import ru.kaiserroman.millenairearmies.client.state.ClientGarrisonState;
 import ru.kaiserroman.millenairearmies.client.ArmyClientScreenBridge;
 
 /** NeoForge 1.21.1 payload registration and main-thread dispatch. */
-@EventBusSubscriber(modid = SarvarMillenaireArmies.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = UniversalisIds.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public final class ArmiesNetwork {
     private ArmiesNetwork() {}
 

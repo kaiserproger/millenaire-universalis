@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Bounded request to assign selected, server-projected Millenaire residents to an army. */
 public record RecruitUnitsIntent(
@@ -17,7 +17,7 @@ public record RecruitUnitsIntent(
         long[] villagerUuidBits)
         implements CustomPacketPayload {
     public static final Type<RecruitUnitsIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "recruit_units"));
+            UniversalisIds.MOD_ID, "recruit_units"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RecruitUnitsIntent> STREAM_CODEC = StreamCodec.of(
             RecruitUnitsIntent::encode, RecruitUnitsIntent::decode);
 

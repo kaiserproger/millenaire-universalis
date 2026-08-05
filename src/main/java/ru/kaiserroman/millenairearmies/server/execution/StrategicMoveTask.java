@@ -9,7 +9,7 @@ import org.millenaire.goal.GoalContext;
 import org.millenaire.goal.ProgressAwareTask;
 import org.millenaire.goal.StopReason;
 import org.millenaire.goal.TravelPhase;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /**
  * A one-shot public-API Millenaire task that owns navigation only until arrival or abandonment.
@@ -17,7 +17,7 @@ import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
  */
 final class StrategicMoveTask extends ProgressAwareTask implements StrategicRetainedTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "strategic_move");
+            UniversalisIds.MOD_ID, "strategic_move");
     private static final Component LABEL = Component.translatable(
             "goal.millenaire_armies.strategic_move");
     private static final double ARRIVE_DISTANCE = 3.0D;

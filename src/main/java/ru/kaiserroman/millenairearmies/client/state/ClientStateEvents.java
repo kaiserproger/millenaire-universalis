@@ -4,12 +4,12 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Keeps state from one server/world out of the next strategic screen. */
 @EventBusSubscriber(
         value = Dist.CLIENT,
-        modid = SarvarMillenaireArmies.MOD_ID,
+        modid = UniversalisIds.MOD_ID,
         bus = EventBusSubscriber.Bus.GAME)
 public final class ClientStateEvents {
     private ClientStateEvents() {}

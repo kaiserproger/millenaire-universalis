@@ -8,10 +8,10 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderNameTagEvent;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.level.LevelEvent;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Allocation-free render lookup using NeoForge's public name-tag event; no renderer mixin required. */
-@EventBusSubscriber(modid = SarvarMillenaireArmies.MOD_ID, value = Dist.CLIENT)
+@EventBusSubscriber(modid = UniversalisIds.MOD_ID, value = Dist.CLIENT)
 public final class ClientPresentationEvents {
     private static final double MAX_MARKER_DISTANCE_SQUARED = 64.0 * 64.0;
 

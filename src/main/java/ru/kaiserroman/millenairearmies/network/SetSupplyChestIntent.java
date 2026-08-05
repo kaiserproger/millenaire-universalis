@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Selects or clears the concrete container used by one army for food and ammunition. */
 public record SetSupplyChestIntent(
@@ -18,7 +18,7 @@ public record SetSupplyChestIntent(
     public static final byte OP_SET = 1;
     public static final byte OP_CLEAR = 2;
     public static final Type<SetSupplyChestIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "set_supply_chest"));
+            UniversalisIds.MOD_ID, "set_supply_chest"));
     public static final StreamCodec<RegistryFriendlyByteBuf, SetSupplyChestIntent> STREAM_CODEC = StreamCodec.of(
             SetSupplyChestIntent::encode, SetSupplyChestIntent::decode);
 

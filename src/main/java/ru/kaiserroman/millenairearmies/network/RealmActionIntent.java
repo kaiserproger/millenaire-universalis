@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Found a realm from a controlled capital or update its bounded tax rate. */
 public record RealmActionIntent(
@@ -19,7 +19,7 @@ public record RealmActionIntent(
     public static final byte ACTION_FOUND = 1;
     public static final byte ACTION_SET_TAX = 2;
     public static final Type<RealmActionIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "realm_action"));
+            UniversalisIds.MOD_ID, "realm_action"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RealmActionIntent> STREAM_CODEC = StreamCodec.of(
             RealmActionIntent::encode, RealmActionIntent::decode);
 

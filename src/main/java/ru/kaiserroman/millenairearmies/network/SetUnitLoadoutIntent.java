@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Server-authoritative loadout override change for one owned unit. */
 public record SetUnitLoadoutIntent(
@@ -22,7 +22,7 @@ public record SetUnitLoadoutIntent(
     private static final int MAX_REGISTRY_KEY_BYTES = 192;
 
     public static final Type<SetUnitLoadoutIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "set_unit_loadout"));
+            UniversalisIds.MOD_ID, "set_unit_loadout"));
     public static final StreamCodec<RegistryFriendlyByteBuf, SetUnitLoadoutIntent> STREAM_CODEC = StreamCodec.of(
             SetUnitLoadoutIntent::encode, SetUnitLoadoutIntent::decode);
 

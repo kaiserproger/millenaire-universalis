@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Bounded visible-garrison projection sent alongside the ordinary army snapshot. */
 public record GarrisonStatePayload(
@@ -31,7 +31,7 @@ public record GarrisonStatePayload(
     public static final int MAX_NAME_UTF8_BYTES = 256;
 
     public static final Type<GarrisonStatePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "garrison_state"));
+            UniversalisIds.MOD_ID, "garrison_state"));
     public static final StreamCodec<RegistryFriendlyByteBuf, GarrisonStatePayload> STREAM_CODEC = StreamCodec.of(
             GarrisonStatePayload::encode, GarrisonStatePayload::decode);
 

@@ -12,7 +12,7 @@ import org.millenaire.goal.GoalContext;
 import org.millenaire.goal.ProgressAwareTask;
 import org.millenaire.goal.StopReason;
 import org.millenaire.goal.TravelPhase;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
@@ -27,7 +27,7 @@ import ru.kaiserroman.millenairearmies.server.supply.ArmySupplyAccess;
  */
 final class StrategicGarrisonTask extends ProgressAwareTask implements StrategicRetainedTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "garrison_guard");
+            UniversalisIds.MOD_ID, "garrison_guard");
     private static final Component LABEL = Component.translatable(
             "goal.millenaire_armies.garrison_guard");
     private static final double MELEE_RANGE_SQ = 4.0D;

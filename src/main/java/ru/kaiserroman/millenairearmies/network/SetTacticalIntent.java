@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Server-authoritative shield-wall or fire-at-will policy change for one controlled army. */
 public record SetTacticalIntent(
@@ -15,7 +15,7 @@ public record SetTacticalIntent(
         long expectedRevision)
         implements CustomPacketPayload {
     public static final Type<SetTacticalIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "set_tactical"));
+            UniversalisIds.MOD_ID, "set_tactical"));
     public static final StreamCodec<RegistryFriendlyByteBuf, SetTacticalIntent> STREAM_CODEC = StreamCodec.of(
             SetTacticalIntent::encode, SetTacticalIntent::decode);
 

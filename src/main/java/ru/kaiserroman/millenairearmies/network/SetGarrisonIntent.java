@@ -5,7 +5,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import ru.kaiserroman.millenairearmies.ArmiesConfig;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Server-authorized proposal to assign/change or clear an army's settlement garrison. */
 public record SetGarrisonIntent(
@@ -23,7 +23,7 @@ public record SetGarrisonIntent(
     public static final byte OP_CLEAR = 2;
 
     public static final Type<SetGarrisonIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "set_garrison"));
+            UniversalisIds.MOD_ID, "set_garrison"));
     public static final StreamCodec<RegistryFriendlyByteBuf, SetGarrisonIntent> STREAM_CODEC = StreamCodec.of(
             SetGarrisonIntent::encode, SetGarrisonIntent::decode);
 

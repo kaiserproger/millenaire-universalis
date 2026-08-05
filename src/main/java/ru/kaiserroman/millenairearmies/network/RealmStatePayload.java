@@ -5,7 +5,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import ru.kaiserroman.millenaire.realm.GovernmentForm;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.persistence.RealmGovernanceSavedData;
 
 /** Bounded server projection of one authenticated player's founded realm and economy. */
@@ -33,7 +33,7 @@ public record RealmStatePayload(
         implements CustomPacketPayload {
     public static final int MAX_STRING_UTF8_BYTES = 192;
     public static final Type<RealmStatePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "realm_state"));
+            UniversalisIds.MOD_ID, "realm_state"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RealmStatePayload> STREAM_CODEC = StreamCodec.of(
             RealmStatePayload::encode, RealmStatePayload::decode);
 

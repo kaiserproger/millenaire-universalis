@@ -309,6 +309,15 @@ tasks.register('validateArmyUiResources', JavaExec) {
     dependsOn classes
 }
 
+tasks.register('runUniversalisIdentitySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the Universalis mod identity and legacy resource compatibility namespace.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.kaiserroman.millenairearmies.UniversalisIdentitySelfTest'
+    jvmArgs '-ea'
+    dependsOn classes
+}
+
 tasks.register('runRealmCoreSelfTest', JavaExec) {
     group = 'verification'
     description = 'Runs the Realm kernel self-test from the unified addon source set.'
@@ -328,7 +337,7 @@ tasks.register('runWorldSimulationSelfTest', JavaExec) {
 }
 
 tasks.named('check') {
-    dependsOn 'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
+    dependsOn 'runUniversalisIdentitySelfTest', 'runRealmCoreSelfTest', 'runWorldSimulationSelfTest',
             'runArmyUiStateSelfTest', 'validateArmyUiResources',
             'runPlayerRealmPersistenceSelfTest', 'runFormationCoordinatorSelfTest',
             'runPackedGarrisonStateSelfTest', 'runGarrisonExecutionPolicySelfTest',

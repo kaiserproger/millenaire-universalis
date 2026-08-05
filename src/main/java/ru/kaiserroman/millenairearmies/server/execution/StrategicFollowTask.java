@@ -12,12 +12,12 @@ import org.millenaire.goal.GoalContext;
 import org.millenaire.goal.ProgressAwareTask;
 import org.millenaire.goal.StopReason;
 import org.millenaire.goal.TravelPhase;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Retained public-navigation task that continuously follows the army controller. */
 final class StrategicFollowTask extends ProgressAwareTask implements StrategicRetainedTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "strategic_follow");
+            UniversalisIds.MOD_ID, "strategic_follow");
     private static final Component LABEL = Component.translatable(
             "goal.millenaire_armies.strategic_follow");
     private static final double WALK_SPEED = 0.62D;

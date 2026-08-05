@@ -32,10 +32,14 @@ import ru.kaiserroman.millenairearmies.server.command.MillArmiesRecruitmentComma
 import ru.kaiserroman.millenairearmies.server.command.MillArmiesSimulationCommands;
 import ru.kaiserroman.millenairearmies.server.integration.ArmiesIntegrationBridge;
 
-@Mod(SarvarMillenaireArmies.MOD_ID)
+@Mod(UniversalisIds.MOD_ID)
 public final class SarvarMillenaireArmies {
-    public static final String MOD_ID = "millenaire_universalis";
-    public static final String LEGACY_CONTENT_NAMESPACE = "millenaire_armies";
+    /** @deprecated Use {@link UniversalisIds#MOD_ID}. */
+    @Deprecated(forRemoval = false)
+    public static final String MOD_ID = UniversalisIds.MOD_ID;
+    /** @deprecated Use {@link UniversalisIds#LEGACY_CONTENT_NAMESPACE}. */
+    @Deprecated(forRemoval = false)
+    public static final String LEGACY_CONTENT_NAMESPACE = UniversalisIds.LEGACY_CONTENT_NAMESPACE;
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final ArmyLifecycleService lifecycle = new ArmyLifecycleService();

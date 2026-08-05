@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Sparse, revision-checked replacement/removal rows following the snapshot row schema. */
 public record ArmyStateDeltaPayload(
@@ -17,7 +17,7 @@ public record ArmyStateDeltaPayload(
         byte[] byteColumns)
         implements CustomPacketPayload {
     public static final Type<ArmyStateDeltaPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "state_delta"));
+            UniversalisIds.MOD_ID, "state_delta"));
     public static final StreamCodec<RegistryFriendlyByteBuf, ArmyStateDeltaPayload> STREAM_CODEC = StreamCodec.of(
             ArmyStateDeltaPayload::encode, ArmyStateDeltaPayload::decode);
 

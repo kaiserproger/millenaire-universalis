@@ -4,14 +4,14 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Bounded, pageable request for an authorized state projection. */
 public record RequestStateIntent(
         byte sectionMask, byte scope, int scopeHandle, int cursor, long knownRevision)
         implements CustomPacketPayload {
     public static final Type<RequestStateIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "request_state"));
+            UniversalisIds.MOD_ID, "request_state"));
     public static final StreamCodec<RegistryFriendlyByteBuf, RequestStateIntent> STREAM_CODEC = StreamCodec.of(
             RequestStateIntent::encode, RequestStateIntent::decode);
 

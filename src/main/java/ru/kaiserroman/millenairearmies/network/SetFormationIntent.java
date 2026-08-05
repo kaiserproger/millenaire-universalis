@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.model.ArmyFormation;
 
 /** Server-authoritative formation change for one controlled army. */
@@ -15,7 +15,7 @@ public record SetFormationIntent(
         long expectedRevision)
         implements CustomPacketPayload {
     public static final Type<SetFormationIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "set_formation"));
+            UniversalisIds.MOD_ID, "set_formation"));
     public static final StreamCodec<RegistryFriendlyByteBuf, SetFormationIntent> STREAM_CODEC = StreamCodec.of(
             SetFormationIntent::encode, SetFormationIntent::decode);
 

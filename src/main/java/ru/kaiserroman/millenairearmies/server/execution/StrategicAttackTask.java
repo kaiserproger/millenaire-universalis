@@ -12,7 +12,7 @@ import org.millenaire.goal.GoalContext;
 import org.millenaire.goal.ProgressAwareTask;
 import org.millenaire.goal.StopReason;
 import org.millenaire.goal.TravelPhase;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 import ru.kaiserroman.millenairearmies.ecs.PackedArmyEcs;
 import ru.kaiserroman.millenairearmies.integration.millenaire.FactionProjectionService;
 import ru.kaiserroman.millenairearmies.integration.millenaire.MillenaireEntityBridge;
@@ -27,7 +27,7 @@ import ru.kaiserroman.millenairearmies.server.supply.ArmySupplyAccess;
  */
 final class StrategicAttackTask extends ProgressAwareTask implements StrategicRetainedTask {
     private static final ResourceLocation GOAL_ID = ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "strategic_attack");
+            UniversalisIds.MOD_ID, "strategic_attack");
     private static final Component LABEL = Component.translatable(
             "goal.millenaire_armies.strategic_attack");
     private static final double FORMATION_SPEED = 0.58D;

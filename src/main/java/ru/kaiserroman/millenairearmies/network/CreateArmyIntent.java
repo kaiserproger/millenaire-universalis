@@ -4,7 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import ru.kaiserroman.millenairearmies.SarvarMillenaireArmies;
+import ru.kaiserroman.millenairearmies.UniversalisIds;
 
 /** Server-authorized intent to raise an army from a Millenaire village. */
 public record CreateArmyIntent(
@@ -19,7 +19,7 @@ public record CreateArmyIntent(
         byte flags)
         implements CustomPacketPayload {
     public static final Type<CreateArmyIntent> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
-            SarvarMillenaireArmies.MOD_ID, "create_army"));
+            UniversalisIds.MOD_ID, "create_army"));
     public static final StreamCodec<RegistryFriendlyByteBuf, CreateArmyIntent> STREAM_CODEC = StreamCodec.of(
             CreateArmyIntent::encode, CreateArmyIntent::decode);
 
