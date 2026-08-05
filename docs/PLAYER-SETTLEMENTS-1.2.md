@@ -1,4 +1,4 @@
-# Player settlements in 1.2.0-SNAPSHOT
+# Player settlements in 1.2.0
 
 ## Goal
 
