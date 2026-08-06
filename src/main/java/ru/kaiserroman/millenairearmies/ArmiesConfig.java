@@ -247,6 +247,20 @@ public final class ArmiesConfig {
             integer("worldMutationMaxAttempts", 64, 1, 10_000);
     public static final int WORLD_MUTATION_RETRY_TICKS =
             integer("worldMutationRetryTicks", 1_200, 20, 72_000);
+    /**
+     * Backoff for candidates that cannot be applied yet because the affected villages are not
+     * loaded. Deferral does not consume a retry attempt, so an idle server never discards a
+     * pending candidate; it is re-checked on this short fixed interval instead.
+     */
+    public static final int WORLD_MUTATION_DEFER_TICKS =
+            integer("worldMutationDeferTicks", 600, 20, 72_000);
+    /**
+     * Safety bound on consecutive deferrals of the same FIFO head within one server session.
+     * Exceeding it demotes the candidate to an ordinary retry so a permanently unloadable
+     * village cannot stall the queue forever.
+     */
+    public static final int WORLD_MUTATION_MAX_DEFER_RUNS =
+            integer("worldMutationMaxDeferRuns", 240, 1, 100_000);
     public static final int WORLD_MUTATION_MIN_FOUNDING_DISTANCE =
             integer("worldMutationMinFoundingDistance", 384, 128, 4_096);
     public static final int WORLD_MUTATION_MAX_FOUNDING_DISTANCE =

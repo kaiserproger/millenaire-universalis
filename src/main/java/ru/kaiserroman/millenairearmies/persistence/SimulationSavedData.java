@@ -102,6 +102,22 @@ public final class SimulationSavedData extends SavedData {
         setDirty();
     }
 
+    /**
+     * Reschedules the head without consuming a retry attempt. Used when the candidate is not
+     * applicable yet rather than failing: the world is simply not loaded around it.
+     */
+    public void scheduleMutationDefer(long sequence, long nextAttemptTick) {
+        if (sequence <= 0L || nextAttemptTick < 0L) {
+            throw new IllegalArgumentException("Invalid mutation defer schedule");
+        }
+        if (mutationSequence != sequence) {
+            mutationSequence = sequence;
+            mutationAttempts = 0;
+        }
+        nextMutationAttemptTick = nextAttemptTick;
+        setDirty();
+    }
+
     public void completeMutationAttempt(long sequence) {
         if (sequence <= 0L) throw new IllegalArgumentException("Invalid completed mutation sequence");
         if (mutationSequence == sequence) {
